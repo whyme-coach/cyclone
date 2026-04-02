@@ -48,24 +48,6 @@ export function useAuth(): UseAuthReturn {
     if (member) {
       setOrganization((member as OrganizationMember & { organization: Organization }).organization)
       setOrgRole(member.role)
-    } else {
-      // Auto-create organization for new users (consultant flow)
-      try {
-        const res = await fetch('/api/setup-org', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.organization) {
-            setOrganization(data.organization)
-            setOrgRole('owner')
-          }
-        }
-      } catch {
-        // ignore - org setup will be retried
-      }
     }
   }, [supabase])
 

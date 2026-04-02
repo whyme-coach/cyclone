@@ -18,10 +18,10 @@ export function LoginForm() {
     setLoading(true)
     try {
       await signIn(email, password)
-      router.push('/projects')
+      // Use hard navigation to ensure middleware picks up the new session cookie
+      window.location.href = '/projects'
     } catch {
       // error is set in useAuth
-    } finally {
       setLoading(false)
     }
   }

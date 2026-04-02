@@ -26,11 +26,36 @@ const statusBadgeVariant = (status: string) => {
 }
 
 export default function ProjectsPage() {
-  const { user, profile, loading: authLoading, signOut } = useAuth()
+  const { user, profile, loading: authLoading, signOut, organization } = useAuth()
   const [projects, setProjects] = useState<(Project & { company?: { name: string } })[]>([])
   const [loading, setLoading] = useState(true)
+  const [settingUpOrg, setSettingUpOrg] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  // Auto-create organization if not exists
+  useEffect(() => {
+    if (authLoading || !user || organization || settingUpOrg) return
+    const setupOrg = async () => {
+      setSettingUpOrg(true)
+      try {
+        const res = await fetch('/api/setup-org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        })
+        if (res.ok) {
+          // Reload to pick up the new org
+          window.location.reload()
+        }
+      } catch {
+        // ignore
+      } finally {
+        setSettingUpOrg(false)
+      }
+    }
+    setupOrg()
+  }, [authLoading, user, organization, settingUpOrg])
 
   useEffect(() => {
     if (!user || authLoading) return
