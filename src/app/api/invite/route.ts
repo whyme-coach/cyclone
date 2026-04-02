@@ -16,10 +16,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: '必須項目が不足しています' }, { status: 400 })
   }
 
-  // Use admin client to bypass RLS for invitation management
   const admin = createAdminClient()
 
-  // Check if user has permission to invite (via admin to avoid RLS issues)
+  // Check permission
   const { data: member } = await admin
     .from('project_members')
     .select('role')
@@ -31,7 +30,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: '招待権限がありません' }, { status: 403 })
   }
 
-  // Create invitation record (admin bypasses RLS)
+  // Upsert invitation record
   const { error: inviteError } = await admin
     .from('invitations')
     .upsert({
@@ -45,40 +44,57 @@ export async function POST(req: Request) {
 
   if (inviteError) {
     console.error('Invitation error:', inviteError)
-    return NextResponse.json({ error: '招待の作成に失敗しました: ' + inviteError.message }, { status: 500 })
+    return NextResponse.json({ error: '招待の作成に失敗しました' }, { status: 500 })
   }
-
-  // Check if user already exists
-  const { data: existingUsers } = await admin.auth.admin.listUsers()
-  const existingUser = existingUsers?.users?.find(u => u.email === email)
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
-  if (existingUser) {
-    // User exists - add as project member
-    await admin.from('project_members').upsert({
-      project_id: projectId,
-      user_id: existingUser.id,
-      role,
-      department_id: departmentId || null,
-      invited_by: user.id,
-    }, { onConflict: 'project_id,user_id' })
+  // Check if user already exists in auth.users
+  const { data: existingUsers } = await admin.auth.admin.listUsers()
+  const existingUser = existingUsers?.users?.find(u => u.email === email)
 
-    await admin.from('invitations').update({ status: 'accepted' })
-      .eq('project_id', projectId)
-      .eq('email', email)
-  } else {
-    // New user - send invite email
-    try {
-      await admin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`,
-        data: { invited_project_id: projectId, invited_role: role },
-      })
-    } catch (emailErr) {
-      console.error('Email invite error:', emailErr)
-      // Invitation record is already saved, email send failure is non-fatal
+  if (existingUser) {
+    // Check if user has confirmed (has last_sign_in_at = active user)
+    if (existingUser.last_sign_in_at) {
+      // Active user - add as project member directly
+      await admin.from('project_members').upsert({
+        project_id: projectId,
+        user_id: existingUser.id,
+        role,
+        department_id: departmentId || null,
+        invited_by: user.id,
+      }, { onConflict: 'project_id,user_id' })
+
+      await admin.from('invitations').update({ status: 'accepted' })
+        .eq('project_id', projectId)
+        .eq('email', email)
+
+      return NextResponse.json({ success: true, alreadyActive: true })
+    } else {
+      // User exists but never signed in - delete and re-invite
+      try {
+        await admin.auth.admin.deleteUser(existingUser.id)
+      } catch (delErr) {
+        console.error('Delete user error:', delErr)
+      }
+      // Fall through to new user invite below
     }
   }
 
-  return NextResponse.json({ success: true })
+  // New user (or re-invite after delete) - send invite email
+  try {
+    const { error: emailErr } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`,
+      data: { invited_project_id: projectId, invited_role: role },
+    })
+    if (emailErr) {
+      console.error('Email invite error:', emailErr)
+      return NextResponse.json({ success: true, emailSent: false, reason: emailErr.message })
+    }
+  } catch (emailErr) {
+    console.error('Email invite exception:', emailErr)
+    return NextResponse.json({ success: true, emailSent: false })
+  }
+
+  return NextResponse.json({ success: true, emailSent: true })
 }
