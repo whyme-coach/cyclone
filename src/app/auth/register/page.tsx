@@ -2,13 +2,25 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import Link from 'next/link'
+import { Suspense } from 'react'
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full" /></div>}>
+      <RegisterContent />
+    </Suspense>
+  )
+}
+
+function RegisterContent() {
+  const searchParams = useSearchParams()
+  const redirectUrl = searchParams.get('redirect') || ''
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,7 +28,20 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [validationError, setValidationError] = useState('')
+  const [projectInfo, setProjectInfo] = useState<{ projectName: string; companyName: string } | null>(null)
   const { signUp, error } = useAuth()
+
+  // If redirected from invitation, show project info
+  useEffect(() => {
+    if (!redirectUrl) return
+    const match = redirectUrl.match(/project=([a-f0-9-]+)/)
+    if (match) {
+      fetch(`/api/project-info?projectId=${match[1]}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) setProjectInfo(data) })
+        .catch(() => {})
+    }
+  }, [redirectUrl])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,9 +95,13 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-slate-900">Cyclone</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            事業計画実行支援プラットフォーム
-          </p>
+          <p className="mt-2 text-sm text-slate-600">事業計画実行支援プラットフォーム</p>
+          {projectInfo && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+              <p className="text-base font-semibold text-blue-900">{projectInfo.companyName}</p>
+              <p className="text-xs text-blue-600">{projectInfo.projectName}</p>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
