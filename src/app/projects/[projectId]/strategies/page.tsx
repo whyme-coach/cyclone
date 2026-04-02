@@ -37,16 +37,17 @@ export default function StrategiesPage() {
   useEffect(() => {
     if (!project) return
     const fetchAll = async () => {
-      const [stratRes, measRes, linkRes] = await Promise.all([
+      const [stratRes, measRes] = await Promise.all([
         supabase.from('strategies').select('*').eq('project_id', project.id).order('sort_order'),
         supabase.from('measures').select('*').eq('project_id', project.id).order('sort_order'),
-        supabase.from('strategy_measure_links').select('*'),
       ])
       if (stratRes.data) setStrategies(stratRes.data)
       if (measRes.data) setMeasures(measRes.data)
-      if (linkRes.data) {
-        const projectStratIds = new Set((stratRes.data || []).map((s: Strategy) => s.id))
-        setLinks(linkRes.data.filter((l: StrategyMeasureLink) => projectStratIds.has(l.strategy_id)))
+      // Fetch links filtered by strategy IDs to avoid RLS 406
+      if (stratRes.data && stratRes.data.length > 0) {
+        const stratIds = stratRes.data.map((s: Strategy) => s.id)
+        const { data: linkData } = await supabase.from('strategy_measure_links').select('*').in('strategy_id', stratIds)
+        if (linkData) setLinks(linkData)
       }
       setLoading(false)
     }

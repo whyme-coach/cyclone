@@ -877,16 +877,16 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
 
   useEffect(() => {
     const fetch = async () => {
-      const [sRes, mRes, lRes] = await Promise.all([
+      const [sRes, mRes] = await Promise.all([
         supabase.from('strategies').select('*').eq('project_id', projectId).order('sort_order'),
         supabase.from('measures').select('*').eq('project_id', projectId).order('sort_order'),
-        supabase.from('strategy_measure_links').select('strategy_id, measure_id'),
       ])
       if (sRes.data) setStrategies(sRes.data)
       if (mRes.data) setMeasures(mRes.data)
-      if (lRes.data) {
-        const sIds = new Set((sRes.data || []).map((s: Strategy) => s.id))
-        setLinks(lRes.data.filter((l: { strategy_id: string; measure_id: string }) => sIds.has(l.strategy_id)))
+      if (sRes.data && sRes.data.length > 0) {
+        const sIds = sRes.data.map((s: Strategy) => s.id)
+        const { data: lData } = await supabase.from('strategy_measure_links').select('strategy_id, measure_id').in('strategy_id', sIds)
+        if (lData) setLinks(lData)
       }
       setLoading(false)
     }
