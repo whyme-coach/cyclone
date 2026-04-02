@@ -127,6 +127,8 @@ export interface Department {
   level: number
   sort_order: number
   manager_user_id?: string
+  role_description?: string
+  responsibilities?: string[]
   created_at: string
   updated_at: string
   // joined

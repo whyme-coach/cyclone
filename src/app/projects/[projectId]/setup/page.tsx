@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { Select } from '@/components/ui/Select'
+import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { useToast } from '@/components/ui/Toast'
@@ -15,7 +16,7 @@ import { callAI, parseAIJsonResponse } from '@/lib/ai/helpers'
 import { safeStoragePath } from '@/lib/storage'
 import { INDUSTRIES, SETUP_STEPS } from '@/lib/constants'
 import { EXTRACT_BUSINESS_PLAN_SYSTEM_PROMPT, EXTRACT_BUSINESS_PLAN_USER_PROMPT } from '@/lib/ai/prompts/extract-business-plan'
-import { EXTRACT_ORG_CHART_SYSTEM_PROMPT, EXTRACT_ORG_CHART_USER_PROMPT } from '@/lib/ai/prompts/extract-org-chart'
+import { EXTRACT_ORG_CHART_SYSTEM_PROMPT, EXTRACT_ORG_CHART_USER_PROMPT, EXTRACT_RESPONSIBILITIES_SYSTEM_PROMPT, EXTRACT_RESPONSIBILITIES_USER_PROMPT } from '@/lib/ai/prompts/extract-org-chart'
 import { cn } from '@/lib/utils'
 import type { Company, ManagementGoal, Strategy, Measure, Department, BusinessPlanExtraction } from '@/types'
 
@@ -440,118 +441,290 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
 // ============================================================
 // Step 3: Org Chart Upload + AI Extraction
 // ============================================================
+type DeptNode = { name: string; level: number; parent_name: string | null; sort_order: number; role_description?: string; responsibilities?: string[]; children?: DeptNode[] }
+
+function buildTree(flat: DeptNode[]): DeptNode[] {
+  const map: Record<string, DeptNode> = {}
+  const roots: DeptNode[] = []
+  for (const d of flat) { map[d.name] = { ...d, children: [] } }
+  for (const d of flat) {
+    const node = map[d.name]
+    if (d.parent_name && map[d.parent_name]) {
+      map[d.parent_name].children!.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+  return roots
+}
+
 function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProject }: {
   projectId: string; onNext: () => void; onBack: () => void; supabase: ReturnType<typeof createClient>; toast: (msg: string, type?: 'success' | 'error' | 'info') => void; refreshProject: () => Promise<void>
 }) {
   const [uploading, setUploading] = useState(false)
   const [extracting, setExtracting] = useState(false)
-  const [uploadedFile, setUploadedFile] = useState<string | null>(null)
-  const [departments, setDepartments] = useState<Array<{ name: string; level: number; parent_name: string | null; sort_order: number }>>([])
+  const [departments, setDepartments] = useState<DeptNode[]>([])
   const [saved, setSaved] = useState(false)
+  const [editingDept, setEditingDept] = useState<DeptNode | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [respUploading, setRespUploading] = useState(false)
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadAndExtract = async (file: File, category: string, endpoint: string, systemPrompt: string, userPrompt: string) => {
+    const path = safeStoragePath(projectId, category, file.name)
+    const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file)
+    if (uploadError) throw uploadError
+    await supabase.from('uploaded_files').insert({ project_id: projectId, file_name: file.name, file_size: file.size, file_type: file.type, category, storage_path: path })
+
+    const { data: urlData } = await supabase.storage.from('project-files').createSignedUrl(path, 600)
+    if (!urlData?.signedUrl) throw new Error('URL取得失敗')
+    const pdfRes = await fetch(urlData.signedUrl)
+    const pdfBlob = await pdfRes.blob()
+    const pdfBase64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve((reader.result as string).split(',')[1])
+      reader.readAsDataURL(pdfBlob)
+    })
+
+    return callAI(endpoint, {
+      system: systemPrompt,
+      messages: [{ role: 'user', content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: userPrompt },
+      ]}],
+    })
+  }
+
+  const handleOrgChartUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setUploading(true)
+    setUploading(true); setExtracting(true)
     try {
-      const path = safeStoragePath(projectId, 'org_chart', file.name)
-      const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file)
-      if (uploadError) throw uploadError
-      await supabase.from('uploaded_files').insert({ project_id: projectId, file_name: file.name, file_size: file.size, file_type: file.type, category: 'org_chart', storage_path: path })
-      setUploadedFile(file.name)
-      toast('アップロード完了。AIで抽出を開始します...', 'success')
-
-      setExtracting(true)
-      const { data: urlData } = await supabase.storage.from('project-files').createSignedUrl(path, 600)
-      if (!urlData?.signedUrl) throw new Error('URL取得失敗')
-
-      const pdfRes = await fetch(urlData.signedUrl)
-      const pdfBlob = await pdfRes.blob()
-      const pdfBase64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1])
-        reader.readAsDataURL(pdfBlob)
-      })
-
-      const aiData = await callAI('extract-org-chart', {
-        system: EXTRACT_ORG_CHART_SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
-            { type: 'text', text: EXTRACT_ORG_CHART_USER_PROMPT },
-          ],
-        }],
-      })
-      const result = parseAIJsonResponse(aiData) as { departments?: Array<{ name: string; level: number; parent_name: string | null; sort_order: number }> } | null
+      toast('組織図をアップロード中...', 'info')
+      const aiData = await uploadAndExtract(file, 'org_chart', 'extract-org-chart', EXTRACT_ORG_CHART_SYSTEM_PROMPT, EXTRACT_ORG_CHART_USER_PROMPT)
+      const result = parseAIJsonResponse(aiData) as { departments?: DeptNode[] } | null
       if (result?.departments) {
         setDepartments(result.departments)
         toast(`${result.departments.length}件の部門を抽出しました`, 'success')
       }
-    } catch (err) {
-      console.error(err)
-      toast('AI抽出に失敗しました', 'error')
-    } finally { setUploading(false); setExtracting(false) }
+    } catch (err) { console.error(err); toast('AI抽出に失敗しました', 'error') }
+    finally { setUploading(false); setExtracting(false) }
+  }
+
+  const handleResponsibilitiesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || departments.length === 0) return
+    setRespUploading(true)
+    try {
+      toast('業務分掌表をアップロード中...', 'info')
+      const aiData = await uploadAndExtract(file, 'other', 'extract-responsibilities', EXTRACT_RESPONSIBILITIES_SYSTEM_PROMPT, EXTRACT_RESPONSIBILITIES_USER_PROMPT)
+      const result = parseAIJsonResponse(aiData) as { departments?: Array<{ name: string; role_description?: string; responsibilities?: string[] }> } | null
+      if (result?.departments) {
+        setDepartments(prev => prev.map(d => {
+          const match = result.departments!.find(r => r.name === d.name)
+          return match ? { ...d, role_description: match.role_description, responsibilities: match.responsibilities } : d
+        }))
+        toast(`${result.departments.length}件の業務内容を紐付けました`, 'success')
+      }
+    } catch (err) { console.error(err); toast('業務分掌表の分析に失敗しました', 'error') }
+    finally { setRespUploading(false) }
+  }
+
+  const handleDeleteDept = (name: string) => {
+    setDepartments(prev => prev.filter(d => d.name !== name && d.parent_name !== name))
+  }
+
+  const handleUpdateDept = (oldName: string, updates: Partial<DeptNode>) => {
+    setDepartments(prev => prev.map(d => d.name === oldName ? { ...d, ...updates } : d))
+    setEditingDept(null)
+  }
+
+  const handleAddDept = (dept: DeptNode) => {
+    setDepartments(prev => [...prev, dept])
+    setShowAddModal(false)
   }
 
   const handleSaveDepartments = async () => {
     try {
+      // Delete existing departments for this project first
+      await supabase.from('departments').delete().eq('project_id', projectId)
+
       const parentMap: Record<string, string> = {}
       for (const dept of departments.sort((a, b) => a.level - b.level)) {
         const parentId = dept.parent_name ? parentMap[dept.parent_name] : null
-        const { data } = await supabase.from('departments').insert({ project_id: projectId, name: dept.name, level: dept.level, sort_order: dept.sort_order, parent_id: parentId || null }).select('id').single()
+        const { data } = await supabase.from('departments').insert({
+          project_id: projectId, name: dept.name, level: dept.level,
+          sort_order: dept.sort_order, parent_id: parentId || null,
+        }).select('id').single()
         if (data) parentMap[dept.name] = data.id
       }
       setSaved(true)
       await refreshProject()
       toast('部門構造を保存しました', 'success')
-    } catch { toast('保存に失敗しました', 'error') }
+    } catch (err) { console.error(err); toast('保存に失敗しました', 'error') }
   }
 
-  return (
-    <Card>
-      <CardTitle>組織図アップロード</CardTitle>
-      <p className="text-sm text-slate-500 mt-1 mb-6">組織図（PDF）をアップロードすると、AIが組織構造を抽出します</p>
+  const tree = buildTree(departments)
 
-      {!uploadedFile ? (
-        <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
-          <svg className="w-12 h-12 text-slate-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-          <p className="text-sm text-slate-600 mb-4">組織図PDFをアップロードしてください</p>
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardTitle>組織図アップロード</CardTitle>
+        <p className="text-sm text-slate-500 mt-1 mb-4">組織図（PDF）をアップロードすると、AIが階層構造を抽出します</p>
+
+        <div className="flex gap-3 flex-wrap">
           <label className="inline-block">
-            <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
-            <span className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg cursor-pointer hover:bg-blue-700">{uploading ? 'アップロード中...' : 'ファイルを選択'}</span>
+            <input type="file" accept=".pdf" onChange={handleOrgChartUpload} className="hidden" />
+            <span className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg cursor-pointer hover:bg-blue-700">
+              {uploading ? '分析中...' : '組織図PDFをアップロード'}
+            </span>
           </label>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-            <span className="text-sm text-green-700">{uploadedFile} をアップロードしました</span>
-          </div>
-          {extracting && <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg"><Spinner size="sm" /><span className="text-sm text-blue-700">AIが組織図を分析しています...</span></div>}
-          {departments.length > 0 && !saved && (
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-slate-700">抽出された部門:</p>
-              <div className="space-y-1">
-                {departments.map((d, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 rounded" style={{ paddingLeft: `${d.level * 24 + 8}px` }}>
-                    <span className="text-sm text-slate-700">{d.name}</span>
-                    <Badge variant="default">Lv.{d.level}</Badge>
-                  </div>
-                ))}
-              </div>
-              <Button onClick={handleSaveDepartments}>部門構造を保存</Button>
-            </div>
+          {departments.length > 0 && (
+            <label className="inline-block">
+              <input type="file" accept=".pdf" onChange={handleResponsibilitiesUpload} className="hidden" />
+              <span className="inline-flex items-center px-4 py-2 bg-slate-600 text-white text-sm font-medium rounded-lg cursor-pointer hover:bg-slate-700">
+                {respUploading ? '分析中...' : '業務分掌表PDFをアップロード'}
+              </span>
+            </label>
           )}
-          {saved && <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">部門構造を保存しました。</div>}
         </div>
+
+        {extracting && <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg mt-4"><Spinner size="sm" /><span className="text-sm text-blue-700">AIが組織図を分析しています（1〜2分）...</span></div>}
+        {respUploading && <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg mt-4"><Spinner size="sm" /><span className="text-sm text-blue-700">業務分掌表を分析しています...</span></div>}
+      </Card>
+
+      {departments.length > 0 && !saved && (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <CardTitle>組織構造（{departments.length}部門）</CardTitle>
+            <Button size="sm" variant="secondary" onClick={() => setShowAddModal(true)}>部門を追加</Button>
+          </div>
+
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            {tree.map((node, i) => (
+              <OrgTreeNode key={i} node={node} onEdit={setEditingDept} onDelete={handleDeleteDept} depth={0} />
+            ))}
+          </div>
+
+          <div className="flex gap-3 mt-4">
+            <Button onClick={handleSaveDepartments} className="flex-1">部門構造を保存</Button>
+          </div>
+        </Card>
       )}
 
-      <div className="flex justify-between mt-6 pt-4 border-t border-slate-200">
+      {saved && (
+        <Card>
+          <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">部門構造を保存しました。</div>
+        </Card>
+      )}
+
+      {/* Edit Modal */}
+      {editingDept && (
+        <DeptEditModal dept={editingDept} allDepts={departments} onSave={(u) => handleUpdateDept(editingDept.name, u)} onClose={() => setEditingDept(null)} />
+      )}
+
+      {/* Add Modal */}
+      {showAddModal && (
+        <DeptAddModal allDepts={departments} onAdd={handleAddDept} onClose={() => setShowAddModal(false)} />
+      )}
+
+      <div className="flex justify-between pt-4 border-t border-slate-200">
         <Button variant="secondary" onClick={onBack}>戻る</Button>
         <Button onClick={onNext}>次へ</Button>
       </div>
-    </Card>
+    </div>
+  )
+}
+
+function OrgTreeNode({ node, onEdit, onDelete, depth }: { node: DeptNode; onEdit: (d: DeptNode) => void; onDelete: (name: string) => void; depth: number }) {
+  const [expanded, setExpanded] = useState(true)
+  const hasChildren = node.children && node.children.length > 0
+  const levelColors = ['bg-blue-50 border-blue-200', 'bg-slate-50 border-slate-200', 'bg-white border-slate-100', 'bg-white border-slate-50']
+
+  return (
+    <div>
+      <div className={cn('flex items-start gap-2 px-3 py-2 border-b', levelColors[Math.min(depth, 3)])} style={{ paddingLeft: `${depth * 20 + 12}px` }}>
+        {hasChildren ? (
+          <button onClick={() => setExpanded(!expanded)} className="mt-0.5 text-slate-400 hover:text-slate-600 shrink-0">
+            <svg className={cn('w-4 h-4 transition-transform', expanded && 'rotate-90')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          </button>
+        ) : <span className="w-4 shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-800">{node.name}</span>
+            <Badge variant={node.level === 0 ? 'info' : node.level === 1 ? 'default' : 'default'}>
+              {node.level === 0 ? '本部' : node.level === 1 ? '部' : node.level === 2 ? '課' : '係'}
+            </Badge>
+          </div>
+          {node.role_description && <p className="text-xs text-slate-500 mt-0.5">{node.role_description}</p>}
+          {node.responsibilities && node.responsibilities.length > 0 && (
+            <div className="mt-1 flex gap-1 flex-wrap">
+              {node.responsibilities.slice(0, 3).map((r, i) => <span key={i} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{r}</span>)}
+              {node.responsibilities.length > 3 && <span className="text-[10px] text-slate-400">+{node.responsibilities.length - 3}</span>}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-1 shrink-0">
+          <button onClick={() => onEdit(node)} className="text-slate-400 hover:text-blue-600 p-1" title="編集">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          </button>
+          <button onClick={() => { if (confirm(`「${node.name}」を削除しますか？`)) onDelete(node.name) }} className="text-slate-400 hover:text-red-600 p-1" title="削除">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          </button>
+        </div>
+      </div>
+      {expanded && hasChildren && node.children!.map((child, i) => (
+        <OrgTreeNode key={i} node={child} onEdit={onEdit} onDelete={onDelete} depth={depth + 1} />
+      ))}
+    </div>
+  )
+}
+
+function DeptEditModal({ dept, allDepts, onSave, onClose }: { dept: DeptNode; allDepts: DeptNode[]; onSave: (u: Partial<DeptNode>) => void; onClose: () => void }) {
+  const [name, setName] = useState(dept.name)
+  const [parentName, setParentName] = useState(dept.parent_name || '')
+  const [roleDesc, setRoleDesc] = useState(dept.role_description || '')
+  const [respText, setRespText] = useState((dept.responsibilities || []).join('\n'))
+
+  return (
+    <Modal open title={`${dept.name} を編集`} onClose={onClose}>
+      <div className="space-y-4">
+        <Input label="部門名" value={name} onChange={e => setName(e.target.value)} required />
+        <Select label="上位部門" value={parentName} onChange={e => setParentName(e.target.value)}
+          options={allDepts.filter(d => d.name !== dept.name).map(d => ({ value: d.name, label: d.name }))} placeholder="（最上位）" />
+        <Textarea label="役割・ミッション" value={roleDesc} onChange={e => setRoleDesc(e.target.value)} rows={2} placeholder="この部門の役割を記載" />
+        <Textarea label="業務内容（1行1項目）" value={respText} onChange={e => setRespText(e.target.value)} rows={5} placeholder="業務内容1&#10;業務内容2&#10;業務内容3" />
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={onClose}>キャンセル</Button>
+          <Button onClick={() => onSave({
+            name, parent_name: parentName || null, role_description: roleDesc || undefined,
+            responsibilities: respText.split('\n').filter(s => s.trim()),
+            level: parentName ? (allDepts.find(d => d.name === parentName)?.level ?? 0) + 1 : 0,
+          })}>保存</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function DeptAddModal({ allDepts, onAdd, onClose }: { allDepts: DeptNode[]; onAdd: (d: DeptNode) => void; onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [parentName, setParentName] = useState('')
+
+  return (
+    <Modal open title="部門を追加" onClose={onClose}>
+      <div className="space-y-4">
+        <Input label="部門名" value={name} onChange={e => setName(e.target.value)} required placeholder="例: 営業部" />
+        <Select label="上位部門" value={parentName} onChange={e => setParentName(e.target.value)}
+          options={allDepts.map(d => ({ value: d.name, label: d.name }))} placeholder="（最上位に追加）" />
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={onClose}>キャンセル</Button>
+          <Button disabled={!name} onClick={() => onAdd({
+            name, parent_name: parentName || null, sort_order: allDepts.length,
+            level: parentName ? (allDepts.find(d => d.name === parentName)?.level ?? 0) + 1 : 0,
+          })}>追加</Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
