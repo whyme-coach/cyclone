@@ -864,16 +864,18 @@ function DeptAddModal({ allDepts, onAdd, onClose }: { allDepts: DeptNode[]; onAd
 }
 
 // ============================================================
-// Step 4: Strategy-Measure Linking with AI
+// Step 4: Strategy-Measure Linking with AI + Department assignment
 // ============================================================
 function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
   projectId: string; onNext: () => void; onBack: () => void; supabase: ReturnType<typeof createClient>; toast: (msg: string, type?: 'success' | 'error' | 'info') => void
 }) {
+  const { departments } = useProjectContext()
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [measures, setMeasures] = useState<Measure[]>([])
   const [links, setLinks] = useState<Array<{ strategy_id: string; measure_id: string }>>([])
   const [loading, setLoading] = useState(true)
   const [autoLinking, setAutoLinking] = useState(false)
+  const [hasLinked, setHasLinked] = useState(false)
 
   useEffect(() => {
     const fetch = async () => {
@@ -886,7 +888,7 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
       if (sRes.data && sRes.data.length > 0) {
         const sIds = sRes.data.map((s: Strategy) => s.id)
         const { data: lData } = await supabase.from('strategy_measure_links').select('strategy_id, measure_id').in('strategy_id', sIds)
-        if (lData) setLinks(lData)
+        if (lData && lData.length > 0) { setLinks(lData); setHasLinked(true) }
       }
       setLoading(false)
     }
@@ -895,83 +897,145 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
 
   const handleAutoLink = async () => {
     if (strategies.length === 0 || measures.length === 0) {
-      toast('戦略と施策を先に登録してください', 'error')
+      toast('事業計画書をアップロードして戦略・施策を登録してください', 'error')
       return
     }
     setAutoLinking(true)
     try {
-      const stratStr = strategies.map((s, i) => `[${i}] ${s.title}`).join('\n')
-      const measStr = measures.map((m, i) => `[${i}] ${m.title}`).join('\n')
+      const deptNames = departments.map(d => d.name).join(', ')
+      const stratStr = strategies.map((s, i) => `[${i}] ${s.title}: ${s.description || ''}`).join('\n')
+      const measStr = measures.map((m, i) => `[${i}] ${m.title}: ${m.description || ''}`).join('\n')
+
       const aiData = await callAI('link-strategies', {
-        system: '戦略と施策の紐付けを行ってください。各施策が最も関連する戦略のインデックスを指定してください。\n\n必ず以下のJSON形式で返してください:\n{"links": [{"strategy_index": 0, "measure_index": 0}]}',
+        system: `戦略と施策の紐付け、および施策と担当部門の紐付けを行ってください。
+
+必ず以下のJSON形式で返してください:
+{
+  "links": [
+    {"strategy_index": 0, "measure_index": 0, "department_name": "担当部門名"}
+  ]
+}
+
+注意:
+- 各施策は最も関連する戦略1つに紐付けてください
+- department_nameは以下の部門一覧から選んでください: ${deptNames || '(部門未登録)'}
+- 部門が不明な場合はdepartment_nameをnullにしてください`,
         messages: [{ role: 'user', content: `【戦略一覧】\n${stratStr}\n\n【施策一覧】\n${measStr}` }],
       })
-      const result = parseAIJsonResponse(aiData) as { links?: Array<{ strategy_index: number; measure_index: number }> } | null
+      const result = parseAIJsonResponse(aiData) as { links?: Array<{ strategy_index: number; measure_index: number; department_name?: string | null }> } | null
       if (result?.links) {
+        // Clear existing links
+        if (links.length > 0) {
+          const existingStratIds = strategies.map(s => s.id)
+          await supabase.from('strategy_measure_links').delete().in('strategy_id', existingStratIds)
+          setLinks([])
+        }
+
         let count = 0
         for (const link of result.links) {
           const stratId = strategies[link.strategy_index]?.id
           const measId = measures[link.measure_index]?.id
           if (stratId && measId) {
-            const existing = links.find(l => l.strategy_id === stratId && l.measure_id === measId)
-            if (!existing) {
-              await supabase.from('strategy_measure_links').insert({ strategy_id: stratId, measure_id: measId, linked_by: 'ai' })
-              setLinks(prev => [...prev, { strategy_id: stratId, measure_id: measId }])
-              count++
+            await supabase.from('strategy_measure_links').insert({ strategy_id: stratId, measure_id: measId, linked_by: 'ai' })
+            setLinks(prev => [...prev, { strategy_id: stratId, measure_id: measId }])
+
+            // Update measure's department_id
+            if (link.department_name) {
+              const dept = departments.find(d => d.name === link.department_name)
+              if (dept) {
+                await supabase.from('measures').update({ department_id: dept.id }).eq('id', measId)
+                setMeasures(prev => prev.map(m => m.id === measId ? { ...m, department_id: dept.id } : m))
+              }
             }
+            count++
           }
         }
-        toast(`${count}件の紐付けを追加しました`, 'success')
+        setHasLinked(true)
+        toast(`${count}件の紐付けを生成しました`, 'success')
       }
-    } catch { toast('AI紐付けに失敗しました', 'error') }
+    } catch { toast('AI分析に失敗しました', 'error') }
     finally { setAutoLinking(false) }
+  }
+
+  const handleChangeDepartment = async (measureId: string, deptId: string) => {
+    await supabase.from('measures').update({ department_id: deptId || null }).eq('id', measureId)
+    setMeasures(prev => prev.map(m => m.id === measureId ? { ...m, department_id: deptId || undefined } : m))
   }
 
   if (loading) return <Card><div className="flex justify-center py-8"><Spinner size="lg" /></div></Card>
 
   return (
-    <Card>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <CardTitle>戦略-施策紐付け</CardTitle>
-          <p className="text-sm text-slate-500 mt-1">AIが戦略と施策を自動的に紐付けます</p>
+    <div className="space-y-6">
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <CardTitle>戦略-施策紐付け</CardTitle>
+            <p className="text-sm text-slate-500 mt-1">AIが戦略・施策の紐付けと担当部門の割り当てを行います</p>
+          </div>
         </div>
-        {strategies.length > 0 && measures.length > 0 && (
-          <Button onClick={handleAutoLink} loading={autoLinking} variant="secondary">AI自動紐付け</Button>
-        )}
-      </div>
 
-      {strategies.length === 0 ? (
-        <div className="py-8 text-center text-sm text-slate-500">事業計画書をアップロードすると、戦略と施策が登録されます。</div>
-      ) : (
-        <div className="space-y-4">
-          {strategies.map(s => {
-            const linkedMeasures = measures.filter(m => links.some(l => l.strategy_id === s.id && l.measure_id === m.id))
-            return (
-              <div key={s.id} className="p-4 border border-slate-200 rounded-lg">
-                <p className="text-sm font-medium text-slate-900"><Badge variant="info">戦略</Badge> {s.title}</p>
-                <div className="mt-2 space-y-1">
+        {strategies.length === 0 ? (
+          <div className="py-8 text-center text-sm text-slate-500">事業計画書をアップロードすると、戦略と施策が登録されます。</div>
+        ) : !hasLinked ? (
+          <div className="py-8 text-center">
+            <p className="text-sm text-slate-600 mb-4">AIが戦略と施策の関連性を分析し、担当部門を提案します</p>
+            <Button onClick={handleAutoLink} loading={autoLinking}>
+              {autoLinking ? 'AI分析中...' : 'AI分析を実行'}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <Button size="sm" variant="secondary" onClick={handleAutoLink} loading={autoLinking}>AI再分析</Button>
+            </div>
+            {strategies.map(s => {
+              const linkedMeasures = measures.filter(m => links.some(l => l.strategy_id === s.id && l.measure_id === m.id))
+              return (
+                <div key={s.id} className="p-4 border border-slate-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Badge variant={(s as Strategy & { strategy_type?: string }).strategy_type === 'functional' ? 'warning' : 'info'}>
+                      {(s as Strategy & { strategy_type?: string }).strategy_type === 'functional' ? '機能別戦略' : '事業戦略'}
+                    </Badge>
+                    <span className="text-sm font-medium text-slate-900">{s.title}</span>
+                  </div>
                   {linkedMeasures.length === 0 ? (
-                    <p className="text-xs text-slate-400">紐付いた施策なし</p>
+                    <p className="text-xs text-slate-400 ml-2">紐付いた施策なし</p>
                   ) : (
-                    linkedMeasures.map(m => (
-                      <div key={m.id} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded px-2 py-1">
-                        <span>→ {m.title}</span>
-                      </div>
-                    ))
+                    <div className="space-y-2 ml-2">
+                      {linkedMeasures.map(m => {
+                        const assignedDept = departments.find(d => d.id === m.department_id)
+                        return (
+                          <div key={m.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
+                            <span className="text-slate-400 shrink-0">└</span>
+                            <span className="text-sm text-slate-700 flex-1 min-w-0">{m.title}</span>
+                            <select
+                              value={m.department_id || ''}
+                              onChange={e => handleChangeDepartment(m.id, e.target.value)}
+                              className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 max-w-[160px]"
+                            >
+                              <option value="">部門を選択</option>
+                              {departments.map(d => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                              ))}
+                            </select>
+                            {assignedDept && <Badge variant="default">{assignedDept.name}</Badge>}
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+              )
+            })}
+          </div>
+        )}
+      </Card>
 
-      <div className="flex justify-between mt-6 pt-4 border-t border-slate-200">
+      <div className="flex justify-between pt-4 border-t border-slate-200">
         <Button variant="secondary" onClick={onBack}>戻る</Button>
         <Button onClick={onNext}>次へ</Button>
       </div>
-    </Card>
+    </div>
   )
 }
 
