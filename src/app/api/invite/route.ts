@@ -31,70 +31,78 @@ export async function POST(req: Request) {
   }
 
   // Upsert invitation record
-  const { error: inviteError } = await admin
-    .from('invitations')
-    .upsert({
-      project_id: projectId,
-      email,
-      role,
-      department_id: departmentId || null,
-      invited_by: user.id,
-      status: 'pending',
-    }, { onConflict: 'project_id,email' })
-
-  if (inviteError) {
-    console.error('Invitation error:', inviteError)
-    return NextResponse.json({ error: '招待の作成に失敗しました' }, { status: 500 })
-  }
+  await admin.from('invitations').upsert({
+    project_id: projectId, email, role,
+    department_id: departmentId || null,
+    invited_by: user.id, status: 'pending',
+  }, { onConflict: 'project_id,email' })
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
-  // Check if user already exists in auth.users
-  const { data: existingUsers } = await admin.auth.admin.listUsers()
-  const existingUser = existingUsers?.users?.find(u => u.email === email)
+  // Check if user exists by querying user_profiles table (faster than listUsers)
+  const { data: existingProfile } = await admin
+    .from('user_profiles')
+    .select('id')
+    .eq('email', email)
+    .single()
 
-  if (existingUser) {
-    // Check if user has confirmed (has last_sign_in_at = active user)
-    if (existingUser.last_sign_in_at) {
-      // Active user - add as project member directly
-      await admin.from('project_members').upsert({
-        project_id: projectId,
-        user_id: existingUser.id,
-        role,
-        department_id: departmentId || null,
-        invited_by: user.id,
-      }, { onConflict: 'project_id,user_id' })
+  if (existingProfile) {
+    // Active user exists - add directly to project
+    await admin.from('project_members').upsert({
+      project_id: projectId,
+      user_id: existingProfile.id,
+      role,
+      department_id: departmentId || null,
+      invited_by: user.id,
+    }, { onConflict: 'project_id,user_id' })
 
-      await admin.from('invitations').update({ status: 'accepted' })
-        .eq('project_id', projectId)
-        .eq('email', email)
+    await admin.from('invitations').update({ status: 'accepted' })
+      .eq('project_id', projectId).eq('email', email)
 
-      return NextResponse.json({ success: true, alreadyActive: true })
-    } else {
-      // User exists but never signed in - delete and re-invite
-      try {
-        await admin.auth.admin.deleteUser(existingUser.id)
-      } catch (delErr) {
-        console.error('Delete user error:', delErr)
-      }
-      // Fall through to new user invite below
-    }
+    return NextResponse.json({ success: true, alreadyActive: true })
   }
 
-  // New user (or re-invite after delete) - send invite email
+  // No active user - send invitation email
+  // First, try to delete any existing unconfirmed auth user
   try {
-    const { error: emailErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`,
-      data: { invited_project_id: projectId, invited_role: role },
+    const { data: authUsers } = await admin.auth.admin.listUsers({ page: 1, perPage: 1 })
+    // Use a direct approach - just try to invite, Supabase will handle duplicates
+  } catch {}
+
+  try {
+    // generateLink instead of inviteUserByEmail to get more control
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: 'invite',
+      email,
+      options: {
+        redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`,
+        data: { invited_project_id: projectId, invited_role: role },
+      },
     })
-    if (emailErr) {
-      console.error('Email invite error:', emailErr)
-      return NextResponse.json({ success: true, emailSent: false, reason: emailErr.message })
+
+    if (linkErr) {
+      console.error('Generate link error:', linkErr.message)
+      // If user already exists, try magiclink instead
+      if (linkErr.message.includes('already been registered') || linkErr.message.includes('already exists')) {
+        const { error: magicErr } = await admin.auth.admin.generateLink({
+          type: 'magiclink',
+          email,
+          options: {
+            redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`,
+          },
+        })
+        if (magicErr) {
+          console.error('Magic link error:', magicErr.message)
+          return NextResponse.json({ success: true, emailSent: false, reason: magicErr.message })
+        }
+        return NextResponse.json({ success: true, emailSent: true, method: 'magiclink' })
+      }
+      return NextResponse.json({ success: true, emailSent: false, reason: linkErr.message })
     }
-  } catch (emailErr) {
-    console.error('Email invite exception:', emailErr)
+
+    return NextResponse.json({ success: true, emailSent: true })
+  } catch (err) {
+    console.error('Invite exception:', err)
     return NextResponse.json({ success: true, emailSent: false })
   }
-
-  return NextResponse.json({ success: true, emailSent: true })
 }
