@@ -21,7 +21,9 @@ export default function LoginPage() {
       const supabase = createClient()
 
       // Supabase client auto-detects the hash and sets the session
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase.auth.getSession().then(({ data }: any) => {
+        const session = data?.session
         if (session) {
           // Check if this is from an invitation
           const invitedProjectId = session.user?.user_metadata?.invited_project_id
@@ -32,7 +34,8 @@ export default function LoginPage() {
           }
         } else {
           // Session not set yet, wait for onAuthStateChange
-          const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: { user: { user_metadata?: { invited_project_id?: string } } } | null) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
             if (event === 'SIGNED_IN' && session) {
               subscription.unsubscribe()
               const invitedProjectId = session.user?.user_metadata?.invited_project_id
