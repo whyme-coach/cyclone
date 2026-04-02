@@ -200,15 +200,11 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
       toast('アップロード完了。AIで抽出を開始します...', 'success')
 
       setExtracting(true)
-      const { data: urlData } = await supabase.storage.from('project-files').createSignedUrl(path, 600)
-      if (!urlData?.signedUrl) throw new Error('URL取得失敗')
-
-      const pdfRes = await fetch(urlData.signedUrl)
-      const pdfBlob = await pdfRes.blob()
+      // Convert file to base64 directly (no Storage re-download needed)
       const pdfBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onloadend = () => resolve((reader.result as string).split(',')[1])
-        reader.readAsDataURL(pdfBlob)
+        reader.readAsDataURL(file)
       })
 
       const aiData = await callAI('extract-business-plan', {
@@ -514,14 +510,11 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
     if (uploadError) throw uploadError
     await supabase.from('uploaded_files').insert({ project_id: projectId, file_name: file.name, file_size: file.size, file_type: file.type, category, storage_path: path })
 
-    const { data: urlData } = await supabase.storage.from('project-files').createSignedUrl(path, 600)
-    if (!urlData?.signedUrl) throw new Error('URL取得失敗')
-    const pdfRes = await fetch(urlData.signedUrl)
-    const pdfBlob = await pdfRes.blob()
+    // Convert file to base64 directly (no Storage re-download)
     const pdfBase64 = await new Promise<string>((resolve) => {
       const reader = new FileReader()
       reader.onloadend = () => resolve((reader.result as string).split(',')[1])
-      reader.readAsDataURL(pdfBlob)
+      reader.readAsDataURL(file)
     })
 
     return callAI(endpoint, {
