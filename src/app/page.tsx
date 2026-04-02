@@ -11,11 +11,26 @@ import Link from 'next/link'
 
 export default function LoginPage() {
   const [processing, setProcessing] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
   const router = useRouter()
 
-  // Handle Supabase Auth redirect with access_token in URL fragment
+  // Handle Supabase Auth redirect with access_token or error in URL fragment
   useEffect(() => {
     const hash = window.location.hash
+    if (hash && hash.includes('error=')) {
+      // Parse error from fragment
+      const params = new URLSearchParams(hash.replace('#', ''))
+      const errorCode = params.get('error_code') || ''
+      const errorDesc = params.get('error_description') || ''
+      if (errorCode === 'otp_expired' || errorDesc.includes('expired')) {
+        setAuthError('招待リンクの有効期限が切れています。管理者に再招待を依頼してください。')
+      } else {
+        setAuthError(`認証エラー: ${errorDesc.replace(/\+/g, ' ')}`)
+      }
+      // Clean up the URL
+      window.history.replaceState(null, '', '/')
+      return
+    }
     if (hash && hash.includes('access_token')) {
       setProcessing(true)
       const supabase = createClient()
@@ -71,6 +86,12 @@ export default function LoginPage() {
             事業計画実行支援プラットフォーム
           </p>
         </div>
+
+        {authError && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-center">
+            <p className="text-sm text-red-700">{authError}</p>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
           <h2 className="text-lg font-semibold text-slate-900 mb-6">ログイン</h2>
