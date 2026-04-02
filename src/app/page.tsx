@@ -2,10 +2,63 @@
 
 export const dynamic = 'force-dynamic'
 
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { LoginForm } from '@/components/auth/LoginForm'
+import { Spinner } from '@/components/ui/Spinner'
+import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
 export default function LoginPage() {
+  const [processing, setProcessing] = useState(false)
+  const router = useRouter()
+
+  // Handle Supabase Auth redirect with access_token in URL fragment
+  useEffect(() => {
+    const hash = window.location.hash
+    if (hash && hash.includes('access_token')) {
+      setProcessing(true)
+      const supabase = createClient()
+
+      // Supabase client auto-detects the hash and sets the session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          // Check if this is from an invitation
+          const invitedProjectId = session.user?.user_metadata?.invited_project_id
+          if (invitedProjectId) {
+            window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
+          } else {
+            window.location.href = '/projects'
+          }
+        } else {
+          // Session not set yet, wait for onAuthStateChange
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+              subscription.unsubscribe()
+              const invitedProjectId = session.user?.user_metadata?.invited_project_id
+              if (invitedProjectId) {
+                window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
+              } else {
+                window.location.href = '/projects'
+              }
+            }
+          })
+          // Timeout fallback
+          setTimeout(() => { setProcessing(false) }, 10000)
+        }
+      })
+    }
+  }, [router])
+
+  if (processing) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+        <Spinner size="lg" />
+        <p className="text-sm text-slate-600">認証を処理しています...</p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md">
