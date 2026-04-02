@@ -1,35 +1,69 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { useAuth } from '@/hooks/useAuth'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 
 export function LoginForm() {
   const [loading, setLoading] = useState(false)
-  const { signIn, error } = useAuth()
+  const [error, setError] = useState<string | null>(null)
   const formRef = useRef<HTMLFormElement>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
 
-    // Read values directly from form elements to handle browser autofill
     const formData = new FormData(formRef.current!)
     const email = (formData.get('email') as string) || ''
     const password = (formData.get('password') as string) || ''
 
     if (!email || !password) {
+      setError('メールアドレスとパスワードを入力してください')
       setLoading(false)
       return
     }
 
     try {
-      await signIn(email, password)
-      // Use hard navigation to ensure middleware picks up the new session cookie
+      // Call Supabase auth API directly to avoid gotrue-js lock issues
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data.access_token) {
+        const msg = data.error_description || data.msg || data.error || 'ログインに失敗しました'
+        setError(
+          msg === 'Invalid login credentials'
+            ? 'メールアドレスまたはパスワードが正しくありません'
+            : msg === 'Email not confirmed'
+              ? 'メールアドレスが確認されていません'
+              : msg
+        )
+        setLoading(false)
+        return
+      }
+
+      // Set the session in Supabase client
+      const supabase = createClient()
+      await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      })
+
+      // Hard navigation to ensure middleware picks up the cookie
       window.location.href = '/projects'
-    } catch {
-      // error is set in useAuth
+    } catch (err) {
+      setError('ネットワークエラーが発生しました。もう一度お試しください。')
       setLoading(false)
     }
   }
