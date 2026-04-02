@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Card } from '@/components/ui/Card'
+import { useToast } from '@/components/ui/Toast'
 import { formatDateShort } from '@/lib/utils'
 import type { Project } from '@/types'
 import { PROJECT_STATUS_LABELS } from '@/types/roles'
@@ -33,6 +34,7 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const { toast } = useToast()
   const orgSetupDone = useRef(false)
 
   useEffect(() => {
@@ -132,6 +134,7 @@ export default function ProjectsPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">年度</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">ステータス</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">更新日</th>
+                  <th className="w-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -158,6 +161,28 @@ export default function ProjectsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-400">
                         {formatDateShort(project.updated_at)}
+                      </td>
+                      <td className="px-2 py-3">
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            const companyName = company?.name || project.name
+                            if (!confirm(`「${companyName}」のプロジェクトを削除しますか？\n\nこの操作は取り消せません。プロジェクトに関連する全てのデータ（経営目標、戦略、施策、KPI、アクションプラン、報告等）が削除されます。`)) return
+                            try {
+                              await supabase.from('projects').delete().eq('id', project.id)
+                              setProjects(prev => prev.filter(p => p.id !== project.id))
+                              toast('プロジェクトを削除しました', 'info')
+                            } catch {
+                              toast('削除に失敗しました', 'error')
+                            }
+                          }}
+                          className="text-slate-300 hover:text-red-500 p-1 transition-colors"
+                          title="プロジェクトを削除"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </td>
                     </tr>
                   )
