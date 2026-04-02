@@ -174,18 +174,56 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
   // Load existing data on mount
   useEffect(() => {
     const loadExisting = async () => {
-      const { data: goals } = await supabase.from('management_goals').select('*').eq('project_id', projectId).limit(1)
-      const { data: strategies } = await supabase.from('strategies').select('*').eq('project_id', projectId).limit(1)
-      if ((goals && goals.length > 0) || (strategies && strategies.length > 0)) {
-        setSaved(true) // Data already saved from a previous session
-      }
+      // Check uploaded file
       const { data: files } = await supabase.from('uploaded_files').select('file_name').eq('project_id', projectId).eq('category', 'business_plan').limit(1)
-      if (files && files.length > 0) {
-        setUploadedFile(files[0].file_name)
+      if (files && files.length > 0) setUploadedFile(files[0].file_name)
+
+      // Load saved extraction data from DB to reconstruct the view
+      const [goalsRes, strategiesRes, bpDataRes] = await Promise.all([
+        supabase.from('management_goals').select('*').eq('project_id', projectId).order('sort_order'),
+        supabase.from('strategies').select('*, measures:strategy_measure_links(measure:measures(*))').eq('project_id', projectId).order('sort_order'),
+        supabase.from('business_plan_data').select('*').eq('project_id', projectId).single(),
+      ])
+
+      const goals = goalsRes.data
+      const strategies = strategiesRes.data
+      const bpData = bpDataRes.data
+
+      if ((goals && goals.length > 0) || (strategies && strategies.length > 0) || bpData) {
+        // Reconstruct BusinessPlanExtraction from saved data
+        const reconstruction: BusinessPlanExtraction = {
+          fiscal_year: bpData?.fiscal_year || project?.fiscal_year,
+          mission: bpData?.mission || undefined,
+          vision: bpData?.vision || undefined,
+          value_statement: bpData?.value_statement || undefined,
+          business_policies: bpData?.business_policies as BusinessPlanExtraction['business_policies'] || undefined,
+          management_goals: goals?.map((g: { type: string; title: string; description?: string; target_value?: string; target_unit?: string }) => ({
+            type: g.type as 'qualitative' | 'quantitative',
+            title: g.title,
+            description: g.description,
+            target_value: g.target_value,
+            target_unit: g.target_unit,
+          })) || undefined,
+          strategies: strategies?.map((s: { title: string; description?: string; strategy_type?: string; measures?: Array<{ measure: { title: string; description?: string } }> }) => ({
+            title: s.title,
+            description: s.description,
+            strategy_type: (s.strategy_type || 'business') as 'business' | 'functional' | 'other',
+            measures: s.measures?.map((link: { measure: { title: string; description?: string } }) => ({
+              title: link.measure?.title || '',
+              description: link.measure?.description,
+            })) || [],
+          })) || undefined,
+          financial_plan: bpData?.financial_plan as BusinessPlanExtraction['financial_plan'] || undefined,
+          investment_plan: bpData?.investment_plan as BusinessPlanExtraction['investment_plan'] || undefined,
+          personnel_plan: bpData?.personnel_plan as BusinessPlanExtraction['personnel_plan'] || undefined,
+          schedule: bpData?.schedule as BusinessPlanExtraction['schedule'] || undefined,
+        }
+        setExtracted(reconstruction)
+        setSaved(true)
       }
     }
     loadExisting()
-  }, [projectId, supabase])
+  }, [projectId, supabase, project])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
