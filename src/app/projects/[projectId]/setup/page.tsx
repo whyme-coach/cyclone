@@ -322,7 +322,7 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
             </div>
           )}
 
-          {extracted && !saved && (
+          {extracted && (
             <div className="space-y-4">
               {/* MVV */}
               {(extracted.mission || extracted.vision || extracted.value_statement) && (
@@ -435,10 +435,13 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
                 </div>
               )}
 
-              <Button onClick={handleSaveExtracted} className="w-full">抽出結果を保存</Button>
+              <div className="flex items-center gap-3">
+                <Button onClick={handleSaveExtracted} className="flex-1" disabled={saved}>{saved ? '保存済み' : '抽出結果を保存'}</Button>
+                {saved && <Badge variant="success">保存完了</Badge>}
+              </div>
             </div>
           )}
-          {saved && <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">保存完了。経営目標・戦略ページで編集できます。</div>}
+          {/* saved message integrated into button area */}
         </div>
       )}
 
@@ -641,7 +644,7 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
           </div>
 
           <div className="flex gap-3 mt-4">
-            <Button onClick={() => { setSaved(false); handleSaveDepartments() }} className="flex-1">{saved ? '変更を保存' : '部門構造を保存'}</Button>
+            <Button onClick={handleSaveDepartments} className="flex-1">{saved ? '変更を保存' : '部門構造を保存'}</Button>
           </div>
         </Card>
       )}
