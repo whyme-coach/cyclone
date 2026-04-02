@@ -835,6 +835,7 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
   const [loading, setLoading] = useState(true)
   const [autoLinking, setAutoLinking] = useState(false)
   const [hasLinked, setHasLinked] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     const fetch = async () => {
@@ -847,7 +848,7 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
       if (sRes.data && sRes.data.length > 0) {
         const sIds = sRes.data.map((s: Strategy) => s.id)
         const { data: lData } = await supabase.from('strategy_measure_links').select('strategy_id, measure_id').in('strategy_id', sIds)
-        if (lData && lData.length > 0) { setLinks(lData); setHasLinked(true) }
+        if (lData && lData.length > 0) { setLinks(lData); setHasLinked(true); setSaved(true) }
       }
       // Restore measureDepts from department_id
       if (mRes.data) {
@@ -900,16 +901,15 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
           setLinks([])
         }
 
-        let count = 0
+        // Build links and dept assignments in state (don't save to DB yet)
+        const newLinks: Array<{ strategy_id: string; measure_id: string }> = []
         const newMeasureDepts: Record<string, string[]> = {}
+        let count = 0
         for (const link of result.links) {
           const stratId = strategies[link.strategy_index]?.id
           const measId = measures[link.measure_index]?.id
           if (stratId && measId) {
-            await supabase.from('strategy_measure_links').insert({ strategy_id: stratId, measure_id: measId, linked_by: 'ai' })
-            setLinks(prev => [...prev, { strategy_id: stratId, measure_id: measId }])
-
-            // Map department names to IDs (max 3)
+            newLinks.push({ strategy_id: stratId, measure_id: measId })
             const deptIds: string[] = []
             if (link.departments) {
               for (const dName of link.departments.slice(0, 3)) {
@@ -917,24 +917,21 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
                 if (dept) deptIds.push(dept.id)
               }
             }
-            if (deptIds.length > 0) {
-              // Save primary department to measures table
-              await supabase.from('measures').update({ department_id: deptIds[0] }).eq('id', measId)
-              setMeasures(prev => prev.map(m => m.id === measId ? { ...m, department_id: deptIds[0] } : m))
-              newMeasureDepts[measId] = deptIds
-            }
+            if (deptIds.length > 0) newMeasureDepts[measId] = deptIds
             count++
           }
         }
+        setLinks(newLinks)
         setMeasureDepts(newMeasureDepts)
         setHasLinked(true)
-        toast(`${count}件の紐付けを生成しました`, 'success')
+        setSaved(false)
+        toast(`${count}件の紐付けを生成しました。「保存」ボタンで確定してください。`, 'success')
       }
     } catch { toast('AI分析に失敗しました', 'error') }
     finally { setAutoLinking(false) }
   }
 
-  const handleToggleDepartment = async (measureId: string, deptId: string) => {
+  const handleToggleDepartment = (measureId: string, deptId: string) => {
     const current = measureDepts[measureId] || []
     let updated: string[]
     if (current.includes(deptId)) {
@@ -944,9 +941,24 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
       updated = [...current, deptId]
     }
     setMeasureDepts(prev => ({ ...prev, [measureId]: updated }))
-    // Save primary (first) department to DB
-    await supabase.from('measures').update({ department_id: updated[0] || null }).eq('id', measureId)
-    setMeasures(prev => prev.map(m => m.id === measureId ? { ...m, department_id: updated[0] || undefined } : m))
+    setSaved(false)
+  }
+
+  const handleSaveLinks = async () => {
+    try {
+      const res = await fetch('/api/save-strategy-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, links, measureDepts }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      setSaved(true)
+      toast('戦略-施策紐付けを保存しました', 'success')
+    } catch (err) {
+      console.error(err)
+      toast('保存に失敗しました', 'error')
+    }
   }
 
   if (loading) return <Card><div className="flex justify-center py-8"><Spinner size="lg" /></div></Card>
@@ -972,8 +984,11 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
               <Button size="sm" variant="secondary" onClick={handleAutoLink} loading={autoLinking}>AI再分析</Button>
+              <Button size="sm" onClick={handleSaveLinks} disabled={saved}>
+                {saved ? '保存済み' : '保存'}
+              </Button>
             </div>
             {strategies.map(s => {
               const linkedMeasures = measures.filter(m => links.some(l => l.strategy_id === s.id && l.measure_id === m.id))
