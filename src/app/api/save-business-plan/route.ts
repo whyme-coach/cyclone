@@ -3,7 +3,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function POST(req: Request) {
-  // Authenticate
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
@@ -18,7 +17,6 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
-  // Verify membership
   const { data: member } = await admin.from('project_members').select('role').eq('project_id', projectId).eq('user_id', user.id).single()
   if (!member) {
     return NextResponse.json({ error: 'Not a project member' }, { status: 403 })
@@ -40,35 +38,37 @@ export async function POST(req: Request) {
       raw_extraction: extracted,
     }, { onConflict: 'project_id,fiscal_year' })
 
-    // 2. Save management_goals
-    if (extracted.management_goals) {
-      for (const [i, g] of extracted.management_goals.entries()) {
-        await admin.from('management_goals').insert({
-          project_id: projectId, type: g.type || 'quantitative',
-          title: g.title, description: g.description || '',
-          target_value: g.target_value || '', target_unit: g.target_unit || '', sort_order: i,
-        })
-      }
+    // 2. Batch insert management_goals
+    if (extracted.management_goals?.length > 0) {
+      const goalRows = extracted.management_goals.map((g: { type?: string; title: string; description?: string; target_value?: string; target_unit?: string }, i: number) => ({
+        project_id: projectId, type: g.type || 'quantitative',
+        title: g.title, description: g.description || '',
+        target_value: g.target_value || '', target_unit: g.target_unit || '', sort_order: i,
+      }))
+      await admin.from('management_goals').insert(goalRows)
     }
 
-    // 3. Save strategies with nested measures
-    if (extracted.strategies) {
+    // 3. Save strategies with nested measures (sequential for ID references)
+    if (extracted.strategies?.length > 0) {
       for (const [i, s] of extracted.strategies.entries()) {
         const { data: stratData } = await admin.from('strategies').insert({
           project_id: projectId, title: s.title, description: s.description || '',
           strategy_type: s.strategy_type || 'business', sort_order: i,
         }).select('id').single()
 
-        if (stratData && s.measures) {
-          for (const [j, m] of s.measures.entries()) {
-            const { data: measData } = await admin.from('measures').insert({
-              project_id: projectId, title: m.title, description: m.description || '', sort_order: j,
-            }).select('id').single()
-            if (measData) {
-              await admin.from('strategy_measure_links').insert({
-                strategy_id: stratData.id, measure_id: measData.id, linked_by: 'ai',
-              })
-            }
+        if (stratData && s.measures?.length > 0) {
+          // Batch insert measures
+          const measRows = s.measures.map((m: { title: string; description?: string }, j: number) => ({
+            project_id: projectId, title: m.title, description: m.description || '', sort_order: j,
+          }))
+          const { data: measResults } = await admin.from('measures').insert(measRows).select('id')
+
+          // Batch insert links
+          if (measResults?.length > 0) {
+            const linkRows = measResults.map((m: { id: string }) => ({
+              strategy_id: stratData.id, measure_id: m.id, linked_by: 'ai',
+            }))
+            await admin.from('strategy_measure_links').insert(linkRows)
           }
         }
       }

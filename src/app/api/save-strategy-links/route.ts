@@ -19,30 +19,31 @@ export async function POST(req: Request) {
     const { data: strategies } = await admin.from('strategies').select('id').eq('project_id', projectId)
     const stratIds = strategies?.map((s: { id: string }) => s.id) || []
 
-    // Clear existing links for this project's strategies
+    // Clear existing links in one call
     if (stratIds.length > 0) {
       await admin.from('strategy_measure_links').delete().in('strategy_id', stratIds)
     }
 
-    // Insert new links
-    if (links && Array.isArray(links)) {
-      for (const link of links) {
-        if (link.strategy_id && link.measure_id) {
-          await admin.from('strategy_measure_links').insert({
-            strategy_id: link.strategy_id,
-            measure_id: link.measure_id,
-            linked_by: 'ai',
-          })
-        }
+    // Batch insert all links at once
+    if (links && Array.isArray(links) && links.length > 0) {
+      const rows = links
+        .filter((l: { strategy_id?: string; measure_id?: string }) => l.strategy_id && l.measure_id)
+        .map((l: { strategy_id: string; measure_id: string }) => ({
+          strategy_id: l.strategy_id,
+          measure_id: l.measure_id,
+          linked_by: 'ai',
+        }))
+      if (rows.length > 0) {
+        await admin.from('strategy_measure_links').insert(rows)
       }
     }
 
-    // Update measure department assignments
+    // Batch update measure departments
     if (measureDepts && typeof measureDepts === 'object') {
-      for (const [measureId, deptIds] of Object.entries(measureDepts)) {
-        const primaryDeptId = (deptIds as string[])[0] || null
-        await admin.from('measures').update({ department_id: primaryDeptId }).eq('id', measureId)
-      }
+      const updates = Object.entries(measureDepts).map(([measureId, deptIds]) =>
+        admin.from('measures').update({ department_id: (deptIds as string[])[0] || null }).eq('id', measureId)
+      )
+      await Promise.all(updates)
     }
 
     return NextResponse.json({ success: true })
