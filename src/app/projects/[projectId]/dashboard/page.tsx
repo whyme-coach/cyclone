@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { useProjectContext } from '../layout'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { createClient } from '@/lib/supabase/client'
-import { PROJECT_STATUS_LABELS, ACTION_ITEM_STATUS_LABELS } from '@/types/roles'
+import { PROJECT_STATUS_LABELS, ACTION_ITEM_STATUS_LABELS, PROJECT_ROLE_LABELS } from '@/types/roles'
 import { cn } from '@/lib/utils'
-import type { KPI, KPIRecord, ActionItem } from '@/types'
+import type { KPI, KPIRecord, ActionItem, Measure } from '@/types'
 
-// Dynamic import for recharts (client-only)
 import dynamic from 'next/dynamic'
 const LineChart = dynamic(() => import('recharts').then(m => m.LineChart), { ssr: false })
 const Line = dynamic(() => import('recharts').then(m => m.Line), { ssr: false })
@@ -21,9 +21,10 @@ const Tooltip = dynamic(() => import('recharts').then(m => m.Tooltip), { ssr: fa
 const ResponsiveContainer = dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false })
 
 export default function ProjectDashboardPage() {
-  const { project, company, role, departments } = useProjectContext()
+  const { project, company, role, departments, member } = useProjectContext()
   const [kpis, setKpis] = useState<(KPI & { records?: KPIRecord[] })[]>([])
   const [actionItems, setActionItems] = useState<ActionItem[]>([])
+  const [myMeasures, setMyMeasures] = useState<Measure[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const supabase = createClient()
@@ -31,58 +32,66 @@ export default function ProjectDashboardPage() {
   useEffect(() => {
     if (!project) return
     const fetchData = async () => {
+      const deptFilter = (role === 'department_manager' && member?.department_id) ? member.department_id : null
+
       const [kpiRes, planRes] = await Promise.all([
-        supabase.from('kpis').select('*').eq('project_id', project.id).order('created_at'),
+        deptFilter
+          ? supabase.from('kpis').select('*').eq('department_id', deptFilter)
+          : supabase.from('kpis').select('*').eq('project_id', project.id),
         supabase.from('action_plans').select('id').eq('project_id', project.id),
       ])
 
       if (kpiRes.data) {
-        // Fetch records for each KPI
         const kpiIds = kpiRes.data.map((k: KPI) => k.id)
-        const { data: records } = await supabase
-          .from('kpi_records')
-          .select('*')
-          .in('kpi_id', kpiIds)
-          .order('record_date')
-        const recordsByKpi: Record<string, KPIRecord[]> = {}
-        if (records) {
-          for (const r of records) {
-            if (!recordsByKpi[r.kpi_id]) recordsByKpi[r.kpi_id] = []
-            recordsByKpi[r.kpi_id].push(r)
-          }
+        if (kpiIds.length > 0) {
+          const { data: records } = await supabase.from('kpi_records').select('*').in('kpi_id', kpiIds).order('record_date')
+          const recordsByKpi: Record<string, KPIRecord[]> = {}
+          if (records) { for (const r of records) { if (!recordsByKpi[r.kpi_id]) recordsByKpi[r.kpi_id] = []; recordsByKpi[r.kpi_id].push(r) } }
+          setKpis(kpiRes.data.map((k: KPI) => ({ ...k, records: recordsByKpi[k.id] || [] })))
+        } else {
+          setKpis([])
         }
-        setKpis(kpiRes.data.map((k: KPI) => ({ ...k, records: recordsByKpi[k.id] || [] })))
       }
 
       if (planRes.data && planRes.data.length > 0) {
         const planIds = planRes.data.map((p: { id: string }) => p.id)
-        const { data: items } = await supabase
-          .from('action_items')
-          .select('*')
-          .in('action_plan_id', planIds)
+        const { data: items } = await supabase.from('action_items').select('*').in('action_plan_id', planIds)
         if (items) setActionItems(items)
       }
+
+      // For department_manager, load measures assigned to their department
+      if (deptFilter) {
+        const { data: measures } = await supabase.from('measures').select('*').eq('department_id', deptFilter)
+        if (measures) setMyMeasures(measures)
+      }
+
       setLoading(false)
     }
     fetchData()
-  }, [project, supabase])
+  }, [project, supabase, role, member])
 
   if (!project) return null
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
 
-  const statusCounts = actionItems.reduce((acc, item) => {
-    acc[item.status] = (acc[item.status] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const statusCounts = actionItems.reduce((acc, item) => { acc[item.status] = (acc[item.status] || 0) + 1; return acc }, {} as Record<string, number>)
   const totalItems = actionItems.length
   const completedItems = statusCounts['completed'] || 0
   const delayedItems = statusCounts['delayed'] || 0
   const overallProgress = totalItems > 0 ? Math.round(actionItems.reduce((sum, i) => sum + i.progress_percent, 0) / totalItems) : 0
 
+  // Department manager gets a focused view
+  const isDeptUser = role === 'department_manager'
+  const myDept = departments.find(d => d.id === member?.department_id)
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">ダッシュボード</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold text-slate-900">
+            {isDeptUser ? `${myDept?.name || '自部門'} ダッシュボード` : 'ダッシュボード'}
+          </h2>
+          {role && <Badge variant="info">{PROJECT_ROLE_LABELS[role]}</Badge>}
+        </div>
         <p className="text-sm text-slate-500 mt-1">{company?.name} - {project.fiscal_year}年度</p>
       </div>
 
@@ -112,6 +121,29 @@ export default function ProjectDashboardPage() {
         </Card>
       </div>
 
+      {/* Department Manager: My Measures */}
+      {isDeptUser && myMeasures.length > 0 && (
+        <Card>
+          <CardTitle>自部門の施策</CardTitle>
+          <p className="text-xs text-slate-500 mt-1 mb-3">あなたの部門に割り当てられた施策です</p>
+          <div className="space-y-2">
+            {myMeasures.map(m => (
+              <div key={m.id} className="p-3 bg-slate-50 rounded-lg">
+                <p className="text-sm font-medium text-slate-900">{m.title}</p>
+                {m.description && <p className="text-xs text-slate-500 mt-0.5">{m.description}</p>}
+              </div>
+            ))}
+          </div>
+          {member?.department_id && (
+            <div className="mt-4 flex gap-2">
+              <Button size="sm" onClick={() => router.push(`/projects/${project.id}/departments/${member.department_id}/kpis`)}>KPIを管理</Button>
+              <Button size="sm" variant="secondary" onClick={() => router.push(`/projects/${project.id}/departments/${member.department_id}/plans`)}>アクションプラン</Button>
+              <Button size="sm" variant="secondary" onClick={() => router.push(`/projects/${project.id}/departments/${member.department_id}/reports`)}>進捗報告</Button>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* KPI Charts */}
       {kpis.length > 0 && (
         <Card>
@@ -120,10 +152,7 @@ export default function ProjectDashboardPage() {
             {kpis.filter(k => k.records && k.records.length > 0).map(kpi => (
               <div key={kpi.id} className="border border-slate-100 rounded-lg p-4">
                 <p className="text-sm font-medium text-slate-900 mb-1">{kpi.name}</p>
-                <p className="text-xs text-slate-500 mb-3">
-                  目標: {kpi.target_value} {kpi.target_unit}
-                  {kpi.current_value != null && ` / 現在: ${kpi.current_value} ${kpi.target_unit}`}
-                </p>
+                <p className="text-xs text-slate-500 mb-3">目標: {kpi.target_value} {kpi.target_unit}</p>
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={kpi.records?.map(r => ({ date: r.record_date.slice(5), value: Number(r.value) }))}>
@@ -138,49 +167,41 @@ export default function ProjectDashboardPage() {
             ))}
           </div>
           {kpis.filter(k => k.records && k.records.length > 0).length === 0 && (
-            <p className="text-sm text-slate-400 mt-2">KPIの実績データが入力されるとトレンドグラフが表示されます</p>
+            <p className="text-sm text-slate-400 mt-2">KPIの実績データが入力されるとグラフが表示されます</p>
           )}
         </Card>
       )}
 
-      {/* Department Overview */}
-      {departments.length > 0 && (
+      {/* Admin/Consultant: Department Overview */}
+      {!isDeptUser && departments.length > 0 && (
         <Card>
           <CardTitle>部門一覧</CardTitle>
           <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {departments.map(dept => {
-              const deptItems = actionItems.filter(ai => {
-                // Find plans for this dept through action_plan
-                return true // simplified - would need plan->dept mapping
-              })
-              return (
-                <button
-                  key={dept.id}
-                  onClick={() => router.push(`/projects/${project.id}/departments/${dept.id}`)}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all"
-                >
-                  <p className="text-sm font-medium text-slate-900">{dept.name}</p>
-                  <p className="text-xs text-slate-400 mt-1">レベル {dept.level}</p>
-                </button>
-              )
-            })}
+            {departments.filter(d => d.level === 1).map(dept => (
+              <button
+                key={dept.id}
+                onClick={() => router.push(`/projects/${project.id}/departments/${dept.id}`)}
+                className="text-left p-4 border border-slate-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all"
+              >
+                <p className="text-sm font-medium text-slate-900">{dept.name}</p>
+                {dept.role_description && <p className="text-xs text-slate-400 mt-1 line-clamp-2">{dept.role_description}</p>}
+              </button>
+            ))}
           </div>
         </Card>
       )}
 
-      {/* Status breakdown */}
+      {/* Action Item Status */}
       {totalItems > 0 && (
         <Card>
           <CardTitle>アクションアイテムステータス</CardTitle>
-          <div className="mt-4 flex gap-4 flex-wrap">
+          <div className="mt-4 flex gap-6 flex-wrap">
             {Object.entries(ACTION_ITEM_STATUS_LABELS).map(([status, label]) => {
               const count = statusCounts[status] || 0
-              const pct = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0
               return (
                 <div key={status} className="text-center">
                   <p className="text-2xl font-bold text-slate-900">{count}</p>
                   <p className="text-xs text-slate-500">{label}</p>
-                  <p className="text-xs text-slate-400">{pct}%</p>
                 </div>
               )
             })}
