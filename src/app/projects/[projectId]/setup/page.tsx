@@ -171,6 +171,22 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
   const [extracted, setExtracted] = useState<BusinessPlanExtraction | null>(null)
   const [saved, setSaved] = useState(false)
 
+  // Load existing data on mount
+  useEffect(() => {
+    const loadExisting = async () => {
+      const { data: goals } = await supabase.from('management_goals').select('*').eq('project_id', projectId).limit(1)
+      const { data: strategies } = await supabase.from('strategies').select('*').eq('project_id', projectId).limit(1)
+      if ((goals && goals.length > 0) || (strategies && strategies.length > 0)) {
+        setSaved(true) // Data already saved from a previous session
+      }
+      const { data: files } = await supabase.from('uploaded_files').select('file_name').eq('project_id', projectId).eq('category', 'business_plan').limit(1)
+      if (files && files.length > 0) {
+        setUploadedFile(files[0].file_name)
+      }
+    }
+    loadExisting()
+  }, [projectId, supabase])
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -469,6 +485,29 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
   const [showAddModal, setShowAddModal] = useState(false)
   const [respUploading, setRespUploading] = useState(false)
 
+  // Load existing departments on mount
+  useEffect(() => {
+    const loadExisting = async () => {
+      const { data } = await supabase.from('departments').select('*').eq('project_id', projectId).order('sort_order')
+      if (data && data.length > 0) {
+        // Convert DB records back to DeptNode format
+        const nameMap: Record<string, string> = {}
+        data.forEach((d: { id: string; name: string }) => { nameMap[d.id] = d.name })
+        const nodes: DeptNode[] = data.map((d: { name: string; level: number; parent_id?: string; sort_order: number; role_description?: string; responsibilities?: string[] }) => ({
+          name: d.name,
+          level: d.level,
+          parent_name: d.parent_id ? nameMap[d.parent_id] || null : null,
+          sort_order: d.sort_order,
+          role_description: d.role_description,
+          responsibilities: d.responsibilities,
+        }))
+        setDepartments(nodes)
+        setSaved(true)
+      }
+    }
+    loadExisting()
+  }, [projectId, supabase])
+
   const uploadAndExtract = async (file: File, category: string, endpoint: string, systemPrompt: string, userPrompt: string) => {
     const path = safeStoragePath(projectId, category, file.name)
     const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file)
@@ -592,11 +631,14 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
         {respUploading && <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg mt-4"><Spinner size="sm" /><span className="text-sm text-blue-700">業務分掌表を分析しています...</span></div>}
       </Card>
 
-      {departments.length > 0 && !saved && (
+      {departments.length > 0 && (
         <Card>
           <div className="flex items-center justify-between mb-4">
             <CardTitle>組織構造（{departments.length}部門）</CardTitle>
-            <Button size="sm" variant="secondary" onClick={() => setShowAddModal(true)}>部門を追加</Button>
+            <div className="flex gap-2">
+              {saved && <Badge variant="success">保存済み</Badge>}
+              <Button size="sm" variant="secondary" onClick={() => setShowAddModal(true)}>部門を追加</Button>
+            </div>
           </div>
 
           <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -606,16 +648,12 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
           </div>
 
           <div className="flex gap-3 mt-4">
-            <Button onClick={handleSaveDepartments} className="flex-1">部門構造を保存</Button>
+            <Button onClick={() => { setSaved(false); handleSaveDepartments() }} className="flex-1">{saved ? '変更を保存' : '部門構造を保存'}</Button>
           </div>
         </Card>
       )}
 
-      {saved && (
-        <Card>
-          <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">部門構造を保存しました。</div>
-        </Card>
-      )}
+      {/* saved message removed - badge shown in tree header instead */}
 
       {/* Edit Modal */}
       {editingDept && (
