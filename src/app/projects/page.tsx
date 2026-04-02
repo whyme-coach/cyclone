@@ -33,7 +33,7 @@ export default function ProjectsPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    if (!user) return
+    if (!user || authLoading) return
     const fetchProjects = async () => {
       // Get projects where user is a member
       const { data: memberships } = await supabase

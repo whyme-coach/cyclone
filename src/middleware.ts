@@ -46,6 +46,7 @@ export const config = {
     '/settings/:path*',
     '/api/ai/:path*',
     '/api/invite',
+    '/api/setup-org',
     '/api/notifications',
   ],
 }
