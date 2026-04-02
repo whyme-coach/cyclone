@@ -32,7 +32,7 @@ export default function LoginPage() {
           }
         } else {
           // Session not set yet, wait for onAuthStateChange
-          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: { user: { user_metadata?: { invited_project_id?: string } } } | null) => {
             if (event === 'SIGNED_IN' && session) {
               subscription.unsubscribe()
               const invitedProjectId = session.user?.user_metadata?.invited_project_id
