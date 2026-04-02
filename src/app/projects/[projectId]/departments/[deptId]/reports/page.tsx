@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { useProjectContext } from '../../../layout'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardTitle } from '@/components/ui/Card'
@@ -20,7 +20,9 @@ import type { ProgressReport, ActionItem, ProgressStatus } from '@/types'
 
 export default function DepartmentReportsPage() {
   const params = useParams()
+  const router = useRouter()
   const deptId = params.deptId as string
+  const projectId = params.projectId as string
   const { project, departments } = useProjectContext()
   const { user } = useAuth()
   const [reports, setReports] = useState<(ProgressReport & { action_item?: ActionItem })[]>([])
@@ -72,6 +74,11 @@ export default function DepartmentReportsPage() {
           <h2 className="text-2xl font-bold text-slate-900">進捗報告</h2>
           <p className="text-sm text-slate-500 mt-1">{department?.name}</p>
         </div>
+        <Button variant="secondary" onClick={() => {
+          const now = new Date()
+          const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+          router.push(`/projects/${projectId}/departments/${deptId}/reports/monthly/${monthStr}`)
+        }}>月次報告を作成</Button>
       </div>
 
       {/* Action Items to Report */}
