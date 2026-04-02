@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 import type { UserProfile, Organization, OrganizationMember } from '@/types'
@@ -19,6 +19,9 @@ interface UseAuthReturn {
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>
 }
 
+// Module-level singleton to avoid re-creation
+const supabase = createClient()
+
 export function useAuth(): UseAuthReturn {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -26,41 +29,18 @@ export function useAuth(): UseAuthReturn {
   const [orgRole, setOrgRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  const supabase = createClient()
-
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    if (data) setProfile(data)
-  }, [supabase])
-
-  const fetchOrganization = useCallback(async (userId: string) => {
-    const { data: member } = await supabase
-      .from('organization_members')
-      .select('*, organization:organizations(*)')
-      .eq('user_id', userId)
-      .single()
-
-    if (member) {
-      setOrganization((member as OrganizationMember & { organization: Organization }).organization)
-      setOrgRole(member.role)
-    }
-  }, [supabase])
+  const initialized = useRef(false)
 
   useEffect(() => {
+    if (initialized.current) return
+    initialized.current = true
+
     const init = async () => {
       try {
         const { data: { user: currentUser } } = await supabase.auth.getUser()
         setUser(currentUser)
         if (currentUser) {
-          await Promise.all([
-            fetchProfile(currentUser.id),
-            fetchOrganization(currentUser.id),
-          ])
+          await loadUserData(currentUser.id)
         }
       } catch {
         // ignore
@@ -68,6 +48,20 @@ export function useAuth(): UseAuthReturn {
         setLoading(false)
       }
     }
+
+    const loadUserData = async (userId: string) => {
+      const [profileRes, orgRes] = await Promise.all([
+        supabase.from('user_profiles').select('*').eq('id', userId).single(),
+        supabase.from('organization_members').select('*, organization:organizations(*)').eq('user_id', userId).single(),
+      ])
+      if (profileRes.data) setProfile(profileRes.data)
+      if (orgRes.data) {
+        const member = orgRes.data as OrganizationMember & { organization: Organization }
+        setOrganization(member.organization)
+        setOrgRole(member.role)
+      }
+    }
+
     init()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -75,10 +69,7 @@ export function useAuth(): UseAuthReturn {
         const u = session?.user ?? null
         setUser(u)
         if (u) {
-          await Promise.all([
-            fetchProfile(u.id),
-            fetchOrganization(u.id),
-          ])
+          await loadUserData(u.id)
         } else {
           setProfile(null)
           setOrganization(null)
@@ -88,7 +79,7 @@ export function useAuth(): UseAuthReturn {
     )
 
     return () => subscription.unsubscribe()
-  }, [supabase, fetchProfile, fetchOrganization])
+  }, [])
 
   const signIn = async (email: string, password: string) => {
     setError(null)
