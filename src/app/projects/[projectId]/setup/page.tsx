@@ -1104,7 +1104,8 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
   // Load existing invitations on mount
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from('invitations').select('*').eq('project_id', projectId)
+      const { data, error } = await supabase.from('invitations').select('*').eq('project_id', projectId)
+      if (error) { console.warn('invitations load error (RLS):', error.message); return }
       if (data && data.length > 0) {
         setInvitees(data.map((inv: { email: string; role: string; status: string; department_id?: string }) => ({
           name: '', email: inv.email, department: departments.find(d => d.id === inv.department_id)?.name || '', position: '',
