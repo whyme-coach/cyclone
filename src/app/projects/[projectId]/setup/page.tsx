@@ -179,19 +179,25 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
       if (files && files.length > 0) setUploadedFile(files[0].file_name)
 
       // Load saved extraction data from DB to reconstruct the view
-      const [goalsRes, strategiesRes, measuresRes, linksRes, bpDataRes] = await Promise.all([
+      const [goalsRes, strategiesRes, measuresRes, bpDataRes] = await Promise.all([
         supabase.from('management_goals').select('*').eq('project_id', projectId).order('sort_order'),
         supabase.from('strategies').select('*').eq('project_id', projectId).order('sort_order'),
         supabase.from('measures').select('*').eq('project_id', projectId).order('sort_order'),
-        supabase.from('strategy_measure_links').select('strategy_id, measure_id'),
         supabase.from('business_plan_data').select('*').eq('project_id', projectId).single(),
       ])
 
       const goals = goalsRes.data
       const strategies = strategiesRes.data
       const measures = measuresRes.data || []
-      const links = linksRes.data || []
       const bpData = bpDataRes.data
+
+      // Fetch links only if strategies exist (avoid 406 on empty filter)
+      let links: Array<{ strategy_id: string; measure_id: string }> = []
+      if (strategies && strategies.length > 0) {
+        const stratIds = strategies.map((s: { id: string }) => s.id)
+        const { data: linksData } = await supabase.from('strategy_measure_links').select('strategy_id, measure_id').in('strategy_id', stratIds)
+        links = linksData || []
+      }
 
       if ((goals && goals.length > 0) || (strategies && strategies.length > 0) || bpData) {
         // Reconstruct BusinessPlanExtraction from saved data
