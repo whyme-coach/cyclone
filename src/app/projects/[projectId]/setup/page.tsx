@@ -231,7 +231,7 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
     setUploading(true)
     try {
       const path = safeStoragePath(projectId, 'business_plan', file.name)
-      const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file)
+      const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file, { upsert: true })
       if (uploadError) throw uploadError
       await supabase.from('uploaded_files').insert({ project_id: projectId, file_name: file.name, file_size: file.size, file_type: file.type, category: 'business_plan', storage_path: path })
       setUploadedFile(file.name)
@@ -547,7 +547,7 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
 
   const uploadAndExtract = async (file: File, category: string, endpoint: string, systemPrompt: string, userPrompt: string) => {
     const path = safeStoragePath(projectId, category, file.name)
-    const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file)
+    const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file, { upsert: true })
     if (uploadError) throw uploadError
     await supabase.from('uploaded_files').insert({ project_id: projectId, file_name: file.name, file_size: file.size, file_type: file.type, category, storage_path: path })
 
