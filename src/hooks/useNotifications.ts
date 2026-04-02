@@ -9,10 +9,10 @@ export function useNotifications(userId: string | undefined) {
   const [unreadCount, setUnreadCount] = useState(0)
   const supabase = useMemo(() => createClient(), [])
 
-  // Fetch initial notifications
+  // Fetch notifications (polling-based, no WebSocket)
   useEffect(() => {
     if (!userId) return
-    const fetch = async () => {
+    const fetchNotifications = async () => {
       const { data } = await supabase
         .from('notifications')
         .select('*')
@@ -24,34 +24,11 @@ export function useNotifications(userId: string | undefined) {
         setUnreadCount(data.filter((n: Notification) => !n.is_read).length)
       }
     }
-    fetch()
-  }, [userId, supabase])
+    fetchNotifications()
 
-  // Subscribe to real-time inserts
-  useEffect(() => {
-    if (!userId) return
-
-    const channel = supabase
-      .channel('notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload: { new: Record<string, unknown> }) => {
-          const newNotification = payload.new as unknown as Notification
-          setNotifications(prev => [newNotification, ...prev])
-          setUnreadCount(prev => prev + 1)
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    // Poll every 30 seconds for new notifications
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
   }, [userId, supabase])
 
   const markAsRead = useCallback(async (id: string) => {

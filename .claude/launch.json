@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cyclone-dev",
+      "runtimeExecutable": "/Users/suzukitakayuki/.nvm/versions/node/v24.12.0/bin/node",
+      "runtimeArgs": ["/Users/suzukitakayuki/.nvm/versions/node/v24.12.0/bin/npx", "next", "dev"],
+      "port": 3000
+    }
+  ]
+}
