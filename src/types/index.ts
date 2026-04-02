@@ -368,10 +368,13 @@ export interface BusinessPlanData {
   value_statement?: string
   business_policies?: Array<{ title: string; description: string }>
   financial_plan?: {
-    pl?: Array<{ item: string; current?: number; plan?: number }>
-    bs?: Array<{ item: string; current?: number; plan?: number }>
+    unit?: string
+    previous_year_label?: string
+    plan_year_label?: string
+    pl?: Array<{ item: string; previous?: number; plan?: number }>
+    bs?: Array<{ item: string; previous?: number; plan?: number }>
   }
-  investment_plan?: Array<{ category: string; amount?: number; description: string; schedule?: string }>
+  investment_plan?: Array<{ item?: string; category: string; amount?: number; unit?: string; description: string; schedule?: string }>
   personnel_plan?: Array<{ department: string; current_count?: number; planned_count?: number; hiring_plan?: string }>
   schedule?: Array<{ milestone: string; target_date?: string; description?: string }>
   raw_extraction?: Record<string, unknown>
@@ -403,10 +406,13 @@ export interface BusinessPlanExtraction {
     }>
   }>
   financial_plan?: {
-    pl?: Array<{ item: string; current?: number; plan?: number }>
-    bs?: Array<{ item: string; current?: number; plan?: number }>
+    unit?: string
+    previous_year_label?: string
+    plan_year_label?: string
+    pl?: Array<{ item: string; previous?: number; plan?: number }>
+    bs?: Array<{ item: string; previous?: number; plan?: number }>
   }
-  investment_plan?: Array<{ category: string; amount?: number; description: string; schedule?: string }>
+  investment_plan?: Array<{ item?: string; category: string; amount?: number; unit?: string; description: string; schedule?: string }>
   personnel_plan?: Array<{ department: string; current_count?: number; planned_count?: number; hiring_plan?: string }>
   schedule?: Array<{ milestone: string; target_date?: string; description?: string }>
 }

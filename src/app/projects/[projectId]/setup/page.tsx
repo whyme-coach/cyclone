@@ -423,12 +423,23 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
               {/* Financial Plan */}
               {extracted.financial_plan?.pl && extracted.financial_plan.pl.length > 0 && (
                 <div className="p-4 bg-slate-50 rounded-lg">
-                  <p className="text-sm font-semibold text-slate-800 mb-2">財務計画（PL）</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-sm font-semibold text-slate-800">財務計画（PL）</p>
+                    {extracted.financial_plan.unit && <Badge variant="default">単位: {extracted.financial_plan.unit}</Badge>}
+                  </div>
                   <table className="w-full text-xs">
-                    <thead><tr className="text-slate-500"><th className="text-left py-1">項目</th><th className="text-right">当期</th><th className="text-right">計画</th></tr></thead>
+                    <thead><tr className="text-slate-500 border-b border-slate-200">
+                      <th className="text-left py-1.5">項目</th>
+                      <th className="text-right py-1.5">{extracted.financial_plan.previous_year_label || '前期実績'}</th>
+                      <th className="text-right py-1.5">{extracted.financial_plan.plan_year_label || '今期計画'}</th>
+                    </tr></thead>
                     <tbody>
                       {extracted.financial_plan.pl.map((r, i) => (
-                        <tr key={i} className="border-t border-slate-200"><td className="py-1 text-slate-700">{r.item}</td><td className="text-right text-slate-600">{fmt(r.current)}</td><td className="text-right text-blue-600 font-medium">{fmt(r.plan)}</td></tr>
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="py-1.5 text-slate-700">{r.item}</td>
+                          <td className="text-right text-slate-600">{r.previous != null ? r.previous.toLocaleString() : '-'}</td>
+                          <td className="text-right text-blue-600 font-medium">{r.plan != null ? r.plan.toLocaleString() : '-'}</td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
@@ -438,10 +449,30 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
               {/* Investment Plan */}
               {extracted.investment_plan && extracted.investment_plan.length > 0 && (
                 <div className="p-4 bg-slate-50 rounded-lg">
-                  <p className="text-sm font-semibold text-slate-800 mb-2">投資計画</p>
-                  {extracted.investment_plan.map((p, i) => (
-                    <div key={i} className="text-xs text-slate-600 mb-1">{p.category}: {p.description}{p.amount ? ` (${fmt(p.amount)}円)` : ''}{p.schedule ? ` - ${p.schedule}` : ''}</div>
-                  ))}
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-sm font-semibold text-slate-800">投資計画</p>
+                    {extracted.investment_plan[0]?.unit && <Badge variant="default">単位: {extracted.investment_plan[0].unit}</Badge>}
+                  </div>
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-slate-500 border-b border-slate-200">
+                      <th className="text-left py-1.5">投資項目</th>
+                      <th className="text-left py-1.5">分類</th>
+                      <th className="text-right py-1.5">金額</th>
+                      <th className="text-left py-1.5">時期</th>
+                      <th className="text-left py-1.5">内容</th>
+                    </tr></thead>
+                    <tbody>
+                      {extracted.investment_plan.map((p, i) => (
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="py-1.5 text-slate-700 font-medium">{p.item || p.description?.split(':')[0] || '-'}</td>
+                          <td className="py-1.5 text-slate-500">{p.category}</td>
+                          <td className="py-1.5 text-right text-blue-600">{p.amount != null ? p.amount.toLocaleString() : '-'}</td>
+                          <td className="py-1.5 text-slate-500">{p.schedule || '-'}</td>
+                          <td className="py-1.5 text-slate-500 max-w-[200px] truncate">{p.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
@@ -476,6 +507,22 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
               <div className="flex items-center gap-3">
                 <Button onClick={handleSaveExtracted} className="flex-1" disabled={saved}>{saved ? '保存済み' : '抽出結果を保存'}</Button>
                 {saved && <Badge variant="success">保存完了</Badge>}
+                {saved && (
+                  <Button variant="danger" size="sm" onClick={async () => {
+                    if (!confirm('抽出結果をクリアして再アップロードしますか？保存済みの経営目標・戦略・施策も削除されます。')) return
+                    await Promise.all([
+                      supabase.from('management_goals').delete().eq('project_id', projectId),
+                      supabase.from('strategy_measure_links').delete().in('strategy_id',
+                        (await supabase.from('strategies').select('id').eq('project_id', projectId)).data?.map((s: { id: string }) => s.id) || []
+                      ),
+                      supabase.from('measures').delete().eq('project_id', projectId),
+                      supabase.from('strategies').delete().eq('project_id', projectId),
+                      supabase.from('business_plan_data').delete().eq('project_id', projectId),
+                    ])
+                    setExtracted(null); setSaved(false); setUploadedFile(null)
+                    toast('データをクリアしました。再アップロードしてください。', 'info')
+                  }}>クリアして再アップロード</Button>
+                )}
               </div>
             </div>
           )}

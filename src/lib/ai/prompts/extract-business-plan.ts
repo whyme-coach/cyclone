@@ -41,20 +41,25 @@ export const EXTRACT_BUSINESS_PLAN_SYSTEM_PROMPT = `あなたは事業計画書�
     }
   ],
   "financial_plan": {
+    "unit": "千円",
+    "previous_year_label": "前期実績",
+    "plan_year_label": "今期計画",
     "pl": [
-      {"item": "売上高", "current": 4200000000, "plan": 5000000000},
-      {"item": "売上原価", "current": 2800000000, "plan": 3200000000},
-      {"item": "売上総利益", "current": 1400000000, "plan": 1800000000},
-      {"item": "販管費", "current": 1000000000, "plan": 1100000000},
-      {"item": "営業利益", "current": 400000000, "plan": 700000000}
+      {"item": "売上高", "previous": 1168000, "plan": 1250000},
+      {"item": "売上原価", "previous": 989000, "plan": 1050000},
+      {"item": "売上総利益", "previous": 179000, "plan": 200000},
+      {"item": "販管費", "previous": 108000, "plan": 119000},
+      {"item": "営業利益", "previous": 71000, "plan": 81000},
+      {"item": "経常利益", "previous": 70000, "plan": 80000},
+      {"item": "当期純利益", "previous": 47000, "plan": 54000}
     ],
     "bs": [
-      {"item": "総資産", "current": 3000000000, "plan": 3500000000},
-      {"item": "純資産", "current": 1500000000, "plan": 1800000000}
+      {"item": "総資産", "previous": 800000, "plan": 900000},
+      {"item": "純資産", "previous": 400000, "plan": 450000}
     ]
   },
   "investment_plan": [
-    {"category": "設備投資", "amount": 200000000, "description": "投資内容の説明", "schedule": "2026年Q2"}
+    {"item": "大型放電加工機", "category": "設備投資", "amount": 80000, "unit": "千円", "description": "EV向け大型金型の需要増に対応", "schedule": "2026年Q2"}
   ],
   "personnel_plan": [
     {"department": "部門名", "current_count": 120, "planned_count": 135, "hiring_plan": "採用計画の説明"}
@@ -70,7 +75,8 @@ export const EXTRACT_BUSINESS_PLAN_SYSTEM_PROMPT = `あなたは事業計画書�
 - strategiesのstrategy_typeは "business"（事業戦略）または "functional"（機能別戦略：人事、財務、IT、マーケティング等）
 - 各strategyの中にmeasures配列を含めてください。施策は必ずいずれかの戦略に紐づけてください
 - measuresのtarget_departmentは、PDFの文脈から担当部門が推測できる場合のみ記載
-- financial_planの金額は数値（円単位）で記載。PLは損益計算書の主要項目、BSは貸借対照表の主要項目
+- financial_planの金額は千円単位の数値で記載（例: 12億円→1200000）。unitフィールドに"千円"を設定。previousは前期実績、planは今期計画。previous_year_labelとplan_year_labelにPDFに記載の年度を設定
+- investment_planのitemは投資対象の名称、categoryは投資分類、amountは千円単位の数値、unitに"千円"を設定
 - 情報が見つからないセクションはnullにしてください（空配列[]ではなくnull）
 `
 
