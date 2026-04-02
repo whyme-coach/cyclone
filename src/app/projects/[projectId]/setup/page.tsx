@@ -944,20 +944,28 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
     setSaved(false)
   }
 
+  const [saving, setSaving] = useState(false)
+
   const handleSaveLinks = async () => {
+    setSaving(true)
+    console.log('[Step4] Saving links:', links.length, 'measureDepts:', Object.keys(measureDepts).length)
     try {
       const res = await fetch('/api/save-strategy-links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, links, measureDepts }),
       })
+      console.log('[Step4] Response status:', res.status)
       const data = await res.json()
+      console.log('[Step4] Response data:', data)
       if (!res.ok) throw new Error(data.error || 'Save failed')
       setSaved(true)
       toast('戦略-施策紐付けを保存しました', 'success')
     } catch (err) {
-      console.error(err)
-      toast('保存に失敗しました', 'error')
+      console.error('[Step4] Save error:', err)
+      toast('保存に失敗しました: ' + (err instanceof Error ? err.message : String(err)), 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -986,7 +994,7 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
           <div className="space-y-4">
             <div className="flex justify-end gap-2">
               <Button size="sm" variant="secondary" onClick={handleAutoLink} loading={autoLinking}>AI再分析</Button>
-              <Button size="sm" onClick={handleSaveLinks} disabled={saved}>
+              <Button size="sm" onClick={handleSaveLinks} loading={saving} disabled={saved}>
                 {saved ? '保存済み' : '保存'}
               </Button>
             </div>
@@ -1092,12 +1100,16 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    console.log('[Step5] Excel file selected:', file.name, file.size, 'bytes')
     try {
       const XLSX = await import('xlsx')
+      console.log('[Step5] XLSX loaded, version:', XLSX.version)
       const data = await file.arrayBuffer()
       const wb = XLSX.read(data)
+      console.log('[Step5] Sheets:', wb.SheetNames)
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws)
+      console.log('[Step5] Parsed rows:', rows.length, 'First row keys:', rows[0] ? Object.keys(rows[0]) : 'empty')
 
       // Flexible column matching by partial keyword search
       const findCol = (row: Record<string, string>, keywords: string[]): string => {
