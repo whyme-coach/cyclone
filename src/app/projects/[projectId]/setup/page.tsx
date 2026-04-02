@@ -179,14 +179,18 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
       if (files && files.length > 0) setUploadedFile(files[0].file_name)
 
       // Load saved extraction data from DB to reconstruct the view
-      const [goalsRes, strategiesRes, bpDataRes] = await Promise.all([
+      const [goalsRes, strategiesRes, measuresRes, linksRes, bpDataRes] = await Promise.all([
         supabase.from('management_goals').select('*').eq('project_id', projectId).order('sort_order'),
-        supabase.from('strategies').select('*, measures:strategy_measure_links(measure:measures(*))').eq('project_id', projectId).order('sort_order'),
+        supabase.from('strategies').select('*').eq('project_id', projectId).order('sort_order'),
+        supabase.from('measures').select('*').eq('project_id', projectId).order('sort_order'),
+        supabase.from('strategy_measure_links').select('strategy_id, measure_id'),
         supabase.from('business_plan_data').select('*').eq('project_id', projectId).single(),
       ])
 
       const goals = goalsRes.data
       const strategies = strategiesRes.data
+      const measures = measuresRes.data || []
+      const links = linksRes.data || []
       const bpData = bpDataRes.data
 
       if ((goals && goals.length > 0) || (strategies && strategies.length > 0) || bpData) {
@@ -204,15 +208,19 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
             target_value: g.target_value,
             target_unit: g.target_unit,
           })) || undefined,
-          strategies: strategies?.map((s: { title: string; description?: string; strategy_type?: string; measures?: Array<{ measure: { title: string; description?: string } }> }) => ({
-            title: s.title,
-            description: s.description,
-            strategy_type: (s.strategy_type || 'business') as 'business' | 'functional' | 'other',
-            measures: s.measures?.map((link: { measure: { title: string; description?: string } }) => ({
-              title: link.measure?.title || '',
-              description: link.measure?.description,
-            })) || [],
-          })) || undefined,
+          strategies: strategies?.map((s: { id: string; title: string; description?: string; strategy_type?: string }) => {
+            const linkedMeasureIds = links.filter((l: { strategy_id: string }) => l.strategy_id === s.id).map((l: { measure_id: string }) => l.measure_id)
+            const linkedMeasures = measures.filter((m: { id: string }) => linkedMeasureIds.includes(m.id))
+            return {
+              title: s.title,
+              description: s.description,
+              strategy_type: (s.strategy_type || 'business') as 'business' | 'functional' | 'other',
+              measures: linkedMeasures.map((m: { title: string; description?: string }) => ({
+                title: m.title,
+                description: m.description,
+              })),
+            }
+          }) || undefined,
           financial_plan: bpData?.financial_plan as BusinessPlanExtraction['financial_plan'] || undefined,
           investment_plan: bpData?.investment_plan as BusinessPlanExtraction['investment_plan'] || undefined,
           personnel_plan: bpData?.personnel_plan as BusinessPlanExtraction['personnel_plan'] || undefined,
