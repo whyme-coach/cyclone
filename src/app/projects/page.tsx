@@ -7,10 +7,11 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
-import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Card } from '@/components/ui/Card'
+import { formatDateShort } from '@/lib/utils'
 import type { Project } from '@/types'
 import { PROJECT_STATUS_LABELS } from '@/types/roles'
 
@@ -27,62 +28,35 @@ const statusBadgeVariant = (status: string) => {
 
 export default function ProjectsPage() {
   const { user, profile, loading: authLoading, signOut, organization } = useAuth()
-  const [projects, setProjects] = useState<(Project & { company?: { name: string } })[]>([])
+  const [projects, setProjects] = useState<(Project & { company?: { name: string; industry?: string } })[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const orgSetupDone = useRef(false)
 
-  // Auto-create organization if not exists (runs once)
   useEffect(() => {
     if (authLoading || !user || organization || orgSetupDone.current) return
     orgSetupDone.current = true
-
-    fetch('/api/setup-org', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    }).catch(() => {})
+    fetch('/api/setup-org', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }).catch(() => {})
   }, [authLoading, user, organization])
 
-  // Fetch projects
   useEffect(() => {
     if (!user || authLoading) return
-
     const fetchProjects = async () => {
-      // Get projects where user is a member
-      const { data: memberships } = await supabase
-        .from('project_members')
-        .select('project_id')
-        .eq('user_id', user.id)
-
+      const { data: memberships } = await supabase.from('project_members').select('project_id').eq('user_id', user.id)
       if (!memberships || memberships.length === 0) {
-        // Also check org membership for consultants
-        const { data: orgMemberships } = await supabase
-          .from('organization_members')
-          .select('organization_id')
-          .eq('user_id', user.id)
-
+        const { data: orgMemberships } = await supabase.from('organization_members').select('organization_id').eq('user_id', user.id)
         if (orgMemberships && orgMemberships.length > 0) {
           const orgIds = orgMemberships.map((m: { organization_id: string }) => m.organization_id)
-          const { data } = await supabase
-            .from('projects')
-            .select('*, company:companies(name)')
-            .in('organization_id', orgIds)
-            .order('updated_at', { ascending: false })
+          const { data } = await supabase.from('projects').select('*, company:companies(name, industry)').in('organization_id', orgIds).order('updated_at', { ascending: false })
           setProjects(data || [])
         }
         setLoading(false)
         return
       }
-
       const projectIds = memberships.map((m: { project_id: string }) => m.project_id)
-      const { data } = await supabase
-        .from('projects')
-        .select('*, company:companies(name)')
-        .in('id', projectIds)
-        .order('updated_at', { ascending: false })
-
+      const { data } = await supabase.from('projects').select('*, company:companies(name, industry)').in('id', projectIds).order('updated_at', { ascending: false })
       setProjects(data || [])
       setLoading(false)
     }
@@ -90,12 +64,15 @@ export default function ProjectsPage() {
   }, [user, authLoading, supabase])
 
   if (authLoading || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Spinner size="lg" />
-      </div>
-    )
+    return <div className="min-h-screen flex items-center justify-center"><Spinner size="lg" /></div>
   }
+
+  const filtered = projects.filter(p => {
+    if (!search) return true
+    const s = search.toLowerCase()
+    const companyName = (p.company as { name: string } | undefined)?.name || ''
+    return p.name.toLowerCase().includes(s) || companyName.toLowerCase().includes(s)
+  })
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -115,7 +92,7 @@ export default function ProjectsPage() {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-slate-900">プロジェクト一覧</h2>
           <Button onClick={() => router.push('/projects/new')}>
-            新規プロジェクト
+            + 新規プロジェクト
           </Button>
         </div>
 
@@ -124,37 +101,69 @@ export default function ProjectsPage() {
             <EmptyState
               title="プロジェクトがありません"
               description="新しいプロジェクトを作成して、事業計画の実行支援を始めましょう。"
-              action={
-                <Button onClick={() => router.push('/projects/new')}>
-                  新規プロジェクトを作成
-                </Button>
-              }
+              action={<Button onClick={() => router.push('/projects/new')}>新規プロジェクトを作成</Button>}
             />
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {projects.map(project => (
-              <Card
-                key={project.id}
-                className="cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => router.push(`/projects/${project.id}/dashboard`)}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-slate-900">{project.name}</h3>
-                    <p className="text-sm text-slate-500 mt-0.5">
-                      {(project.company as { name: string } | undefined)?.name}
-                    </p>
-                  </div>
-                  <Badge variant={statusBadgeVariant(project.status)}>
-                    {PROJECT_STATUS_LABELS[project.status]}
-                  </Badge>
-                </div>
-                <div className="text-xs text-slate-400">
-                  {project.fiscal_year}年度
-                </div>
-              </Card>
-            ))}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            {/* Search & filter bar */}
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-4">
+              <div className="relative flex-1 max-w-sm">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="プロジェクトを検索..."
+                  className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-400"
+                />
+              </div>
+              <span className="text-xs text-slate-400">全 {filtered.length} 件</span>
+            </div>
+
+            {/* Table */}
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">クライアント名</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">業種</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">年度</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">ステータス</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">更新日</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(project => {
+                  const company = project.company as { name: string; industry?: string } | undefined
+                  return (
+                    <tr
+                      key={project.id}
+                      onClick={() => router.push(`/projects/${project.id}/dashboard`)}
+                      className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{company?.name || project.name}</p>
+                          <p className="text-xs text-slate-400">{project.name}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{company?.industry || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{project.fiscal_year}年度</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={statusBadgeVariant(project.status)}>
+                          {PROJECT_STATUS_LABELS[project.status]}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-400">
+                        {formatDateShort(project.updated_at)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </main>
