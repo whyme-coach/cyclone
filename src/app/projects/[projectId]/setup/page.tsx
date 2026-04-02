@@ -12,6 +12,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { useToast } from '@/components/ui/Toast'
 import { createClient } from '@/lib/supabase/client'
 import { callAI, parseAIJsonResponse } from '@/lib/ai/helpers'
+import { safeStoragePath } from '@/lib/storage'
 import { INDUSTRIES, SETUP_STEPS } from '@/lib/constants'
 import { EXTRACT_BUSINESS_PLAN_SYSTEM_PROMPT, EXTRACT_BUSINESS_PLAN_USER_PROMPT } from '@/lib/ai/prompts/extract-business-plan'
 import { EXTRACT_ORG_CHART_SYSTEM_PROMPT, EXTRACT_ORG_CHART_USER_PROMPT } from '@/lib/ai/prompts/extract-org-chart'
@@ -173,7 +174,7 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
     if (!file) return
     setUploading(true)
     try {
-      const path = `${projectId}/business_plan/${Date.now()}_${file.name}`
+      const path = safeStoragePath(projectId, 'business_plan', file.name)
       const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file)
       if (uploadError) throw uploadError
       await supabase.from('uploaded_files').insert({ project_id: projectId, file_name: file.name, file_size: file.size, file_type: file.type, category: 'business_plan', storage_path: path })
@@ -321,7 +322,7 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
     if (!file) return
     setUploading(true)
     try {
-      const path = `${projectId}/org_chart/${Date.now()}_${file.name}`
+      const path = safeStoragePath(projectId, 'org_chart', file.name)
       const { error: uploadError } = await supabase.storage.from('project-files').upload(path, file)
       if (uploadError) throw uploadError
       await supabase.from('uploaded_files').insert({ project_id: projectId, file_name: file.name, file_size: file.size, file_type: file.type, category: 'org_chart', storage_path: path })
