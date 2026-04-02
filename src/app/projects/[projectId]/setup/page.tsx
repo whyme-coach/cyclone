@@ -902,12 +902,14 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
     }
     setAutoLinking(true)
     try {
-      const deptNames = departments.map(d => d.name).join(', ')
+      // 部単位（level 1）の部門のみを候補にする
+      const buDepts = departments.filter(d => d.level === 1)
+      const deptNames = buDepts.map(d => d.name).join(', ')
       const stratStr = strategies.map((s, i) => `[${i}] ${s.title}: ${s.description || ''}`).join('\n')
       const measStr = measures.map((m, i) => `[${i}] ${m.title}: ${m.description || ''}`).join('\n')
 
       const aiData = await callAI('link-strategies', {
-        system: `戦略と施策の紐付け、および施策と担当部門の紐付けを行ってください。
+        system: `戦略と施策の紐付け、および施策の担当部門の割り当てを行ってください。
 
 必ず以下のJSON形式で返してください:
 {
@@ -918,8 +920,9 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
 
 注意:
 - 各施策は最も関連する戦略1つに紐付けてください
-- department_nameは以下の部門一覧から選んでください: ${deptNames || '(部門未登録)'}
-- 部門が不明な場合はdepartment_nameをnullにしてください`,
+- department_nameは以下の「部」単位の部門一覧から必ず選んでください: ${deptNames || '(部門未登録)'}
+- 施策の内容から最も適切な担当部門を判断して自動的に割り振ってください
+- 複数の部門にまたがる施策は、主担当となる部門を1つ選んでください`,
         messages: [{ role: 'user', content: `【戦略一覧】\n${stratStr}\n\n【施策一覧】\n${measStr}` }],
       })
       const result = parseAIJsonResponse(aiData) as { links?: Array<{ strategy_index: number; measure_index: number; department_name?: string | null }> } | null
@@ -1014,11 +1017,10 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
                               className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 max-w-[160px]"
                             >
                               <option value="">部門を選択</option>
-                              {departments.map(d => (
+                              {departments.filter(d => d.level === 1).map(d => (
                                 <option key={d.id} value={d.id}>{d.name}</option>
                               ))}
                             </select>
-                            {assignedDept && <Badge variant="default">{assignedDept.name}</Badge>}
                           </div>
                         )
                       })}
