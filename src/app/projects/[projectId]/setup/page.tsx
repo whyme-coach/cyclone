@@ -828,29 +828,54 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
   projectId: string; onNext: () => void; onBack: () => void; supabase: ReturnType<typeof createClient>; toast: (msg: string, type?: 'success' | 'error' | 'info') => void
 }) {
   const { departments } = useProjectContext()
+  const linkStorageKey = `cyclone-step4-${projectId}`
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [measures, setMeasures] = useState<Measure[]>([])
   const [links, setLinks] = useState<Array<{ strategy_id: string; measure_id: string }>>([])
-  const [measureDepts, setMeasureDepts] = useState<Record<string, string[]>>({}) // measureId -> deptId[]
+  const [measureDepts, setMeasureDepts] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
   const [autoLinking, setAutoLinking] = useState(false)
   const [hasLinked, setHasLinked] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  // Save links & measureDepts to localStorage when they change
   useEffect(() => {
-    const fetch = async () => {
+    if (hasLinked && links.length > 0) {
+      localStorage.setItem(linkStorageKey, JSON.stringify({ links, measureDepts, saved }))
+    }
+  }, [links, measureDepts, hasLinked, saved, linkStorageKey])
+
+  useEffect(() => {
+    const fetchData = async () => {
       const [sRes, mRes] = await Promise.all([
         supabase.from('strategies').select('*').eq('project_id', projectId).order('sort_order'),
         supabase.from('measures').select('*').eq('project_id', projectId).order('sort_order'),
       ])
       if (sRes.data) setStrategies(sRes.data)
       if (mRes.data) setMeasures(mRes.data)
+
+      // Try localStorage first
+      try {
+        const cached = localStorage.getItem(linkStorageKey)
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (parsed.links?.length > 0) {
+            setLinks(parsed.links)
+            setMeasureDepts(parsed.measureDepts || {})
+            setHasLinked(true)
+            setSaved(parsed.saved ?? false)
+            setLoading(false)
+            return
+          }
+        }
+      } catch {}
+
+      // Fallback to DB
       if (sRes.data && sRes.data.length > 0) {
         const sIds = sRes.data.map((s: Strategy) => s.id)
         const { data: lData } = await supabase.from('strategy_measure_links').select('strategy_id, measure_id').in('strategy_id', sIds)
         if (lData && lData.length > 0) { setLinks(lData); setHasLinked(true); setSaved(true) }
       }
-      // Restore measureDepts from department_id
       if (mRes.data) {
         const deptMap: Record<string, string[]> = {}
         mRes.data.forEach((m: Measure) => { if (m.department_id) deptMap[m.id] = [m.department_id] })
@@ -858,8 +883,8 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
       }
       setLoading(false)
     }
-    fetch()
-  }, [projectId, supabase])
+    fetchData()
+  }, [projectId, supabase, linkStorageKey])
 
   const handleAutoLink = async () => {
     if (strategies.length === 0 || measures.length === 0) {
