@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
@@ -29,36 +29,26 @@ export default function ProjectsPage() {
   const { user, profile, loading: authLoading, signOut, organization } = useAuth()
   const [projects, setProjects] = useState<(Project & { company?: { name: string } })[]>([])
   const [loading, setLoading] = useState(true)
-  const [settingUpOrg, setSettingUpOrg] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
+  const orgSetupDone = useRef(false)
 
-  // Auto-create organization if not exists
+  // Auto-create organization if not exists (runs once)
   useEffect(() => {
-    if (authLoading || !user || organization || settingUpOrg) return
-    const setupOrg = async () => {
-      setSettingUpOrg(true)
-      try {
-        const res = await fetch('/api/setup-org', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        })
-        if (res.ok) {
-          // Reload to pick up the new org
-          window.location.reload()
-        }
-      } catch {
-        // ignore
-      } finally {
-        setSettingUpOrg(false)
-      }
-    }
-    setupOrg()
-  }, [authLoading, user, organization, settingUpOrg])
+    if (authLoading || !user || organization || orgSetupDone.current) return
+    orgSetupDone.current = true
 
+    fetch('/api/setup-org', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }).catch(() => {})
+  }, [authLoading, user, organization])
+
+  // Fetch projects
   useEffect(() => {
     if (!user || authLoading) return
+
     const fetchProjects = async () => {
       // Get projects where user is a member
       const { data: memberships } = await supabase
@@ -97,7 +87,7 @@ export default function ProjectsPage() {
       setLoading(false)
     }
     fetchProjects()
-  }, [user, supabase])
+  }, [user, authLoading, supabase])
 
   if (authLoading || loading) {
     return (
