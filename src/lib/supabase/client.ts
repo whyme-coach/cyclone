@@ -9,7 +9,6 @@ export function createClient() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
   if (!url || !key) {
-    // During build time, return a dummy client that won't be used
     if (typeof window === 'undefined') {
       return createBrowserClient('https://placeholder.supabase.co', 'placeholder-key')
     }
@@ -18,6 +17,11 @@ export function createClient() {
     )
   }
 
-  client = createBrowserClient(url, key)
+  client = createBrowserClient(url, key, {
+    auth: {
+      flowType: 'pkce',
+      storageKey: 'cyclone-auth',
+    },
+  })
   return client
 }
