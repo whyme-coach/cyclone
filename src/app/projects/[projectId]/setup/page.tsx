@@ -17,7 +17,7 @@ import { INDUSTRIES, SETUP_STEPS } from '@/lib/constants'
 import { EXTRACT_BUSINESS_PLAN_SYSTEM_PROMPT, EXTRACT_BUSINESS_PLAN_USER_PROMPT } from '@/lib/ai/prompts/extract-business-plan'
 import { EXTRACT_ORG_CHART_SYSTEM_PROMPT, EXTRACT_ORG_CHART_USER_PROMPT } from '@/lib/ai/prompts/extract-org-chart'
 import { cn } from '@/lib/utils'
-import type { Company, ManagementGoal, Strategy, Measure, Department } from '@/types'
+import type { Company, ManagementGoal, Strategy, Measure, Department, BusinessPlanExtraction } from '@/types'
 
 export default function SetupPage() {
   const { project, company, refreshProject } = useProjectContext()
@@ -163,10 +163,11 @@ function CompanyInfoStep({ company, projectId, onNext, supabase, toast }: {
 function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
   projectId: string; onNext: () => void; onBack: () => void; supabase: ReturnType<typeof createClient>; toast: (msg: string, type?: 'success' | 'error' | 'info') => void
 }) {
+  const { project } = useProjectContext()
   const [uploading, setUploading] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<string | null>(null)
-  const [extracted, setExtracted] = useState<{ goals: ManagementGoal[]; strategies: Strategy[]; measures: Array<{ title: string; description?: string; related_strategy_index: number }> } | null>(null)
+  const [extracted, setExtracted] = useState<BusinessPlanExtraction | null>(null)
   const [saved, setSaved] = useState(false)
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -181,7 +182,6 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
       setUploadedFile(file.name)
       toast('アップロード完了。AIで抽出を開始します...', 'success')
 
-      // Trigger AI extraction
       setExtracting(true)
       const { data: urlData } = await supabase.storage.from('project-files').createSignedUrl(path, 600)
       if (!urlData?.signedUrl) throw new Error('URL取得失敗')
@@ -204,14 +204,13 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
           ],
         }],
       })
-      const result = parseAIJsonResponse(aiData) as { management_goals?: Array<{ type: string; title: string; description?: string; target_value?: string; target_unit?: string }>; strategies?: Array<{ title: string; description?: string }>; measures?: Array<{ title: string; description?: string; related_strategy_index: number }> } | null
+      const result = parseAIJsonResponse(aiData) as BusinessPlanExtraction | null
       if (result) {
-        setExtracted({
-          goals: (result.management_goals || []) as unknown as ManagementGoal[],
-          strategies: (result.strategies || []) as unknown as Strategy[],
-          measures: result.measures || [],
-        })
-        toast(`${(result.management_goals || []).length}件の目標、${(result.strategies || []).length}件の戦略、${(result.measures || []).length}件の施策を抽出しました`, 'success')
+        setExtracted(result)
+        const goalCount = result.management_goals?.length || 0
+        const stratCount = result.strategies?.length || 0
+        const measCount = result.strategies?.reduce((s, st) => s + (st.measures?.length || 0), 0) || 0
+        toast(`${goalCount}件の目標、${stratCount}件の戦略、${measCount}件の施策を抽出しました`, 'success')
       }
     } catch (err) {
       console.error(err)
@@ -222,32 +221,69 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
   const handleSaveExtracted = async () => {
     if (!extracted) return
     try {
-      // Save goals
-      for (const [i, g] of extracted.goals.entries()) {
-        await supabase.from('management_goals').insert({ project_id: projectId, type: (g as unknown as Record<string, string>).type || 'quantitative', title: (g as unknown as Record<string, string>).title, description: (g as unknown as Record<string, string>).description || '', target_value: (g as unknown as Record<string, string>).target_value || '', target_unit: (g as unknown as Record<string, string>).target_unit || '', sort_order: i })
-      }
-      // Save strategies
-      const strategyIds: string[] = []
-      for (const [i, s] of extracted.strategies.entries()) {
-        const { data } = await supabase.from('strategies').insert({ project_id: projectId, title: (s as unknown as Record<string, string>).title, description: (s as unknown as Record<string, string>).description || '', sort_order: i }).select('id').single()
-        strategyIds.push(data?.id || '')
-      }
-      // Save measures with strategy links
-      for (const [i, m] of extracted.measures.entries()) {
-        const { data } = await supabase.from('measures').insert({ project_id: projectId, title: m.title, description: m.description || '', sort_order: i }).select('id').single()
-        if (data && m.related_strategy_index >= 0 && m.related_strategy_index < strategyIds.length) {
-          await supabase.from('strategy_measure_links').insert({ strategy_id: strategyIds[m.related_strategy_index], measure_id: data.id, linked_by: 'ai' })
+      const fiscalYear = extracted.fiscal_year || project?.fiscal_year || new Date().getFullYear()
+
+      // 1. Save business_plan_data (JSONB)
+      await supabase.from('business_plan_data').upsert({
+        project_id: projectId, fiscal_year: fiscalYear,
+        mission: extracted.mission || null, vision: extracted.vision || null,
+        value_statement: extracted.value_statement || null,
+        business_policies: extracted.business_policies || [],
+        financial_plan: extracted.financial_plan || {},
+        investment_plan: extracted.investment_plan || [],
+        personnel_plan: extracted.personnel_plan || [],
+        schedule: extracted.schedule || [],
+        raw_extraction: extracted,
+      }, { onConflict: 'project_id,fiscal_year' })
+
+      // 2. Save management_goals
+      if (extracted.management_goals) {
+        for (const [i, g] of extracted.management_goals.entries()) {
+          await supabase.from('management_goals').insert({
+            project_id: projectId, type: g.type || 'quantitative',
+            title: g.title, description: g.description || '',
+            target_value: g.target_value || '', target_unit: g.target_unit || '', sort_order: i,
+          })
         }
       }
+
+      // 3. Save strategies with nested measures
+      if (extracted.strategies) {
+        for (const [i, s] of extracted.strategies.entries()) {
+          const { data: stratData } = await supabase.from('strategies').insert({
+            project_id: projectId, title: s.title, description: s.description || '',
+            strategy_type: s.strategy_type || 'business', sort_order: i,
+          }).select('id').single()
+
+          if (stratData && s.measures) {
+            for (const [j, m] of s.measures.entries()) {
+              const { data: measData } = await supabase.from('measures').insert({
+                project_id: projectId, title: m.title, description: m.description || '', sort_order: j,
+              }).select('id').single()
+              if (measData) {
+                await supabase.from('strategy_measure_links').insert({
+                  strategy_id: stratData.id, measure_id: measData.id, linked_by: 'ai',
+                })
+              }
+            }
+          }
+        }
+      }
+
       setSaved(true)
       toast('抽出結果を保存しました', 'success')
-    } catch { toast('保存に失敗しました', 'error') }
+    } catch (err) {
+      console.error(err)
+      toast('保存に失敗しました', 'error')
+    }
   }
+
+  const fmt = (n: number | undefined) => n != null ? n.toLocaleString() : '-'
 
   return (
     <Card>
       <CardTitle>事業計画書アップロード</CardTitle>
-      <p className="text-sm text-slate-500 mt-1 mb-6">事業計画書（PDF）をアップロードすると、AIが経営目標・戦略・施策を抽出します</p>
+      <p className="text-sm text-slate-500 mt-1 mb-6">事業計画書（PDF）をアップロードすると、AIが構造化データを抽出します</p>
 
       {!uploadedFile ? (
         <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
@@ -269,28 +305,124 @@ function BusinessPlanStep({ projectId, onNext, onBack, supabase, toast }: {
 
           {extracting && (
             <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg">
-              <Spinner size="sm" /><span className="text-sm text-blue-700">AIが事業計画書を分析しています...</span>
+              <Spinner size="sm" /><span className="text-sm text-blue-700">AIが事業計画書を分析しています（1〜2分かかります）...</span>
             </div>
           )}
 
           {extracted && !saved && (
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-slate-700">抽出結果:</p>
-              <div className="grid gap-2">
-                <div className="p-3 bg-slate-50 rounded-lg">
-                  <Badge variant="info">経営目標 {extracted.goals.length}件</Badge>
-                  {extracted.goals.map((g, i) => <p key={i} className="text-xs text-slate-600 mt-1">・{(g as unknown as Record<string, string>).title}</p>)}
+            <div className="space-y-4">
+              {/* MVV */}
+              {(extracted.mission || extracted.vision || extracted.value_statement) && (
+                <div className="p-4 bg-slate-50 rounded-lg space-y-2">
+                  <p className="text-sm font-semibold text-slate-800">Mission / Vision / Value</p>
+                  {extracted.mission && <div><span className="text-xs font-medium text-blue-600">Mission:</span><p className="text-sm text-slate-700">{extracted.mission}</p></div>}
+                  {extracted.vision && <div><span className="text-xs font-medium text-blue-600">Vision:</span><p className="text-sm text-slate-700">{extracted.vision}</p></div>}
+                  {extracted.value_statement && <div><span className="text-xs font-medium text-blue-600">Value:</span><p className="text-sm text-slate-700">{extracted.value_statement}</p></div>}
                 </div>
-                <div className="p-3 bg-slate-50 rounded-lg">
-                  <Badge variant="info">戦略 {extracted.strategies.length}件</Badge>
-                  {extracted.strategies.map((s, i) => <p key={i} className="text-xs text-slate-600 mt-1">・{(s as unknown as Record<string, string>).title}</p>)}
+              )}
+
+              {/* Business Policies */}
+              {extracted.business_policies && extracted.business_policies.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">経営方針</p>
+                  {extracted.business_policies.map((p, i) => (
+                    <div key={i} className="mb-1"><span className="text-xs font-medium text-slate-600">{p.title}:</span><span className="text-xs text-slate-500 ml-1">{p.description}</span></div>
+                  ))}
                 </div>
-                <div className="p-3 bg-slate-50 rounded-lg">
-                  <Badge variant="info">施策 {extracted.measures.length}件</Badge>
-                  {extracted.measures.map((m, i) => <p key={i} className="text-xs text-slate-600 mt-1">・{m.title}</p>)}
+              )}
+
+              {/* Management Goals */}
+              {extracted.management_goals && extracted.management_goals.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">経営目標 ({extracted.management_goals.length}件)</p>
+                  {extracted.management_goals.map((g, i) => (
+                    <div key={i} className="flex items-start gap-2 mb-1">
+                      <Badge variant={g.type === 'quantitative' ? 'info' : 'success'}>{g.type === 'quantitative' ? '定量' : '定性'}</Badge>
+                      <div><span className="text-xs text-slate-700">{g.title}</span>{g.target_value && <span className="text-xs text-blue-600 ml-1">({g.target_value}{g.target_unit})</span>}</div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <Button onClick={handleSaveExtracted}>抽出結果を保存</Button>
+              )}
+
+              {/* Strategies & Measures (tree) */}
+              {extracted.strategies && extracted.strategies.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">戦略・施策 ({extracted.strategies.length}件)</p>
+                  {extracted.strategies.map((s, i) => (
+                    <div key={i} className="mb-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={s.strategy_type === 'functional' ? 'warning' : 'info'}>{s.strategy_type === 'functional' ? '機能別' : '事業'}</Badge>
+                        <span className="text-xs font-medium text-slate-700">{s.title}</span>
+                      </div>
+                      {s.measures && s.measures.length > 0 && (
+                        <div className="ml-6 mt-1 space-y-1">
+                          {s.measures.map((m, j) => (
+                            <div key={j} className="flex items-center gap-1 text-xs text-slate-600">
+                              <span className="text-slate-400">└</span> {m.title}
+                              {m.target_department && <Badge variant="default">{m.target_department}</Badge>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Financial Plan */}
+              {extracted.financial_plan?.pl && extracted.financial_plan.pl.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">財務計画（PL）</p>
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-slate-500"><th className="text-left py-1">項目</th><th className="text-right">当期</th><th className="text-right">計画</th></tr></thead>
+                    <tbody>
+                      {extracted.financial_plan.pl.map((r, i) => (
+                        <tr key={i} className="border-t border-slate-200"><td className="py-1 text-slate-700">{r.item}</td><td className="text-right text-slate-600">{fmt(r.current)}</td><td className="text-right text-blue-600 font-medium">{fmt(r.plan)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Investment Plan */}
+              {extracted.investment_plan && extracted.investment_plan.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">投資計画</p>
+                  {extracted.investment_plan.map((p, i) => (
+                    <div key={i} className="text-xs text-slate-600 mb-1">{p.category}: {p.description}{p.amount ? ` (${fmt(p.amount)}円)` : ''}{p.schedule ? ` - ${p.schedule}` : ''}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Personnel Plan */}
+              {extracted.personnel_plan && extracted.personnel_plan.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">人員計画</p>
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-slate-500"><th className="text-left py-1">部門</th><th className="text-right">現在</th><th className="text-right">計画</th><th className="text-left pl-2">採用計画</th></tr></thead>
+                    <tbody>
+                      {extracted.personnel_plan.map((p, i) => (
+                        <tr key={i} className="border-t border-slate-200"><td className="py-1 text-slate-700">{p.department}</td><td className="text-right">{p.current_count ?? '-'}</td><td className="text-right text-blue-600">{p.planned_count ?? '-'}</td><td className="pl-2 text-slate-500">{p.hiring_plan || '-'}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Schedule */}
+              {extracted.schedule && extracted.schedule.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">スケジュール</p>
+                  {extracted.schedule.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-slate-600 mb-1">
+                      <Badge variant="default">{s.target_date || '未定'}</Badge>
+                      <span>{s.milestone}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button onClick={handleSaveExtracted} className="w-full">抽出結果を保存</Button>
             </div>
           )}
           {saved && <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">保存完了。経営目標・戦略ページで編集できます。</div>}

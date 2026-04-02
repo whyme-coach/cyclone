@@ -353,6 +353,62 @@ export interface UploadedFile {
   created_at: string
 }
 
+// ============================================================
+// Business Plan Data (structured extraction)
+// ============================================================
+
+export interface BusinessPlanData {
+  id: string
+  project_id: string
+  fiscal_year: number
+  mission?: string
+  vision?: string
+  value_statement?: string
+  business_policies?: Array<{ title: string; description: string }>
+  financial_plan?: {
+    pl?: Array<{ item: string; current?: number; plan?: number }>
+    bs?: Array<{ item: string; current?: number; plan?: number }>
+  }
+  investment_plan?: Array<{ category: string; amount?: number; description: string; schedule?: string }>
+  personnel_plan?: Array<{ department: string; current_count?: number; planned_count?: number; hiring_plan?: string }>
+  schedule?: Array<{ milestone: string; target_date?: string; description?: string }>
+  raw_extraction?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface BusinessPlanExtraction {
+  fiscal_year?: number
+  mission?: string
+  vision?: string
+  value_statement?: string
+  business_policies?: Array<{ title: string; description: string }>
+  management_goals?: Array<{
+    type: 'qualitative' | 'quantitative'
+    title: string
+    description?: string
+    target_value?: string
+    target_unit?: string
+  }>
+  strategies?: Array<{
+    title: string
+    description?: string
+    strategy_type?: 'business' | 'functional' | 'other'
+    measures?: Array<{
+      title: string
+      description?: string
+      target_department?: string
+    }>
+  }>
+  financial_plan?: {
+    pl?: Array<{ item: string; current?: number; plan?: number }>
+    bs?: Array<{ item: string; current?: number; plan?: number }>
+  }
+  investment_plan?: Array<{ category: string; amount?: number; description: string; schedule?: string }>
+  personnel_plan?: Array<{ department: string; current_count?: number; planned_count?: number; hiring_plan?: string }>
+  schedule?: Array<{ milestone: string; target_date?: string; description?: string }>
+}
+
 // Re-export role types
 export type {
   ProjectRole,
