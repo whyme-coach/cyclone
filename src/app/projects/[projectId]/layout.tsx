@@ -100,8 +100,8 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       <div className="min-h-screen bg-slate-50 flex">
         {/* Sidebar */}
         <aside className={cn(
-          'bg-white border-r border-slate-200 flex flex-col transition-all duration-200',
-          sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'
+          'bg-white border-r border-slate-200 flex flex-col transition-all duration-200 sticky top-0 h-screen overflow-y-auto',
+          sidebarOpen ? 'w-60 shrink-0' : 'w-0 overflow-hidden'
         )}>
           <div className="h-16 flex items-center px-4 border-b border-slate-200">
             <button onClick={() => router.push('/projects')} className="text-slate-400 hover:text-slate-600 mr-2">
