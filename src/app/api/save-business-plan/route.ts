@@ -64,7 +64,7 @@ export async function POST(req: Request) {
           const { data: measResults } = await admin.from('measures').insert(measRows).select('id')
 
           // Batch insert links
-          if (measResults?.length > 0) {
+          if (measResults && measResults.length > 0) {
             const linkRows = measResults.map((m: { id: string }) => ({
               strategy_id: stratData.id, measure_id: m.id, linked_by: 'ai',
             }))
