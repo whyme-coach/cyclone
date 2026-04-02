@@ -1085,58 +1085,211 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
 // ============================================================
 // Step 5: Invite Members
 // ============================================================
-function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: () => void }) {
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('company_admin')
-  const [loading, setLoading] = useState(false)
-  const [invitedList, setInvitedList] = useState<string[]>([])
-  const { toast } = useToast()
+type InviteeRow = { name: string; email: string; department: string; role: string; status: 'pending' | 'sending' | 'sent' | 'accepted' | 'error' }
 
-  const handleInvite = async () => {
-    if (!email) return
-    setLoading(true)
+const ROLE_OPTIONS = [
+  { value: 'department_manager', label: '一般' },
+  { value: 'company_admin', label: '管理部門' },
+  { value: 'executive', label: '経営層' },
+]
+
+function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: () => void }) {
+  const { departments } = useProjectContext()
+  const [invitees, setInvitees] = useState<InviteeRow[]>([])
+  const [sending, setSending] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const { toast } = useToast()
+  const supabase = createClient()
+
+  // Load existing invitations on mount
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from('invitations').select('*').eq('project_id', projectId)
+      if (data && data.length > 0) {
+        setInvitees(data.map((inv: { email: string; role: string; status: string; department_id?: string }) => ({
+          name: '', email: inv.email, department: departments.find(d => d.id === inv.department_id)?.name || '',
+          role: inv.role, status: inv.status === 'accepted' ? 'accepted' as const : 'sent' as const,
+        })))
+      }
+    }
+    load()
+  }, [projectId, supabase, departments])
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
     try {
-      const res = await fetch('/api/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId, email, role }) })
-      if (!res.ok) throw new Error()
-      toast(`${email} を招待しました`, 'success')
-      setInvitedList(prev => [...prev, email])
-      setEmail('')
-    } catch { toast('招待に失敗しました', 'error') }
-    finally { setLoading(false) }
+      const XLSX = await import('xlsx')
+      const data = await file.arrayBuffer()
+      const wb = XLSX.read(data)
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws)
+
+      const parsed: InviteeRow[] = rows.map(row => {
+        // Flexible column matching (部署/部門, 氏名/名前, メール/email)
+        const dept = row['部署'] || row['部署名'] || row['部門'] || row['department'] || ''
+        const name = row['氏名'] || row['名前'] || row['name'] || ''
+        const email = row['メールアドレス'] || row['メール'] || row['email'] || row['Email'] || ''
+        return { name, email: email.trim(), department: dept, role: 'department_manager', status: 'pending' as const }
+      }).filter(r => r.email && r.email.includes('@'))
+
+      setInvitees(prev => {
+        const existingEmails = new Set(prev.map(i => i.email))
+        const newOnes = parsed.filter(p => !existingEmails.has(p.email))
+        return [...prev, ...newOnes]
+      })
+      toast(`${parsed.length}件の従業員を読み込みました`, 'success')
+    } catch { toast('Excelの読み込みに失敗しました', 'error') }
   }
 
+  const handleChangeRole = (email: string, role: string) => {
+    setInvitees(prev => prev.map(i => i.email === email ? { ...i, role } : i))
+  }
+
+  const handleRemove = (email: string) => {
+    setInvitees(prev => prev.filter(i => i.email !== email))
+  }
+
+  const handleAddManual = (row: InviteeRow) => {
+    if (invitees.some(i => i.email === row.email)) { toast('このメールアドレスは既に追加されています', 'error'); return }
+    setInvitees(prev => [...prev, row])
+    setShowAddModal(false)
+  }
+
+  const handleSendAll = async () => {
+    const unsent = invitees.filter(i => i.status === 'pending')
+    if (unsent.length === 0) { toast('送信対象がありません', 'info'); return }
+    setSending(true)
+    let successCount = 0
+    for (const inv of unsent) {
+      setInvitees(prev => prev.map(i => i.email === inv.email ? { ...i, status: 'sending' } : i))
+      try {
+        const deptId = departments.find(d => d.name === inv.department)?.id
+        const res = await fetch('/api/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, email: inv.email, role: inv.role, departmentId: deptId }),
+        })
+        if (!res.ok) throw new Error()
+        setInvitees(prev => prev.map(i => i.email === inv.email ? { ...i, status: 'sent' } : i))
+        successCount++
+      } catch {
+        setInvitees(prev => prev.map(i => i.email === inv.email ? { ...i, status: 'error' } : i))
+      }
+    }
+    setSending(false)
+    toast(`${successCount}件の招待を送信しました`, 'success')
+  }
+
+  const statusLabel = (s: string) => ({ pending: '未送信', sending: '送信中...', sent: '送信済み', accepted: '承認済み', error: 'エラー' }[s] || s)
+  const statusVariant = (s: string) => ({ pending: 'default', sending: 'info', sent: 'info', accepted: 'success', error: 'danger' }[s] || 'default') as 'default' | 'info' | 'success' | 'danger'
+
+  const pendingCount = invitees.filter(i => i.status === 'pending').length
+
   return (
-    <Card>
-      <CardTitle>メンバー招待</CardTitle>
-      <p className="text-sm text-slate-500 mt-1 mb-6">事業会社の管理者やメンバーを招待します</p>
+    <div className="space-y-6">
+      <Card>
+        <CardTitle>メンバー招待</CardTitle>
+        <p className="text-sm text-slate-500 mt-1 mb-4">従業員リスト（Excel）をアップロードするか、手動で追加してください</p>
 
-      <div className="flex gap-3">
-        <div className="flex-1"><Input label="メールアドレス" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@company.co.jp" /></div>
-        <div className="w-48">
-          <Select label="権限" value={role} onChange={e => setRole(e.target.value)} options={[
-            { value: 'company_admin', label: '管理部門' },
-            { value: 'department_manager', label: '部門責任者' },
-            { value: 'executive', label: '経営層' },
-          ]} />
+        <div className="flex gap-3 flex-wrap">
+          <label className="inline-block">
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} className="hidden" />
+            <span className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg cursor-pointer hover:bg-blue-700">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+              Excelアップロード
+            </span>
+          </label>
+          <Button variant="secondary" onClick={() => setShowAddModal(true)}>手動で追加</Button>
         </div>
-        <div className="pt-6"><Button onClick={handleInvite} loading={loading}>招待</Button></div>
-      </div>
+        <p className="text-xs text-slate-400 mt-2">Excel列: 部署（部署名/部門）、氏名（氏名/名前）、メールアドレス（メール/email）</p>
+      </Card>
 
-      {invitedList.length > 0 && (
-        <div className="mt-4 space-y-1">
-          {invitedList.map((e, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm text-green-700">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-              {e}
+      {invitees.length > 0 && (
+        <Card padding={false}>
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-800">招待リスト（{invitees.length}名）</p>
+            <div className="flex gap-2">
+              {pendingCount > 0 && (
+                <Button size="sm" onClick={handleSendAll} loading={sending}>
+                  {pendingCount}件の招待を一括送信
+                </Button>
+              )}
             </div>
-          ))}
-        </div>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-xs text-slate-500">
+                <th className="text-left px-4 py-2">氏名</th>
+                <th className="text-left px-4 py-2">メールアドレス</th>
+                <th className="text-left px-4 py-2">部署</th>
+                <th className="text-left px-4 py-2">権限</th>
+                <th className="text-left px-4 py-2">ステータス</th>
+                <th className="w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {invitees.map((inv, i) => (
+                <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                  <td className="px-4 py-2 text-slate-700">{inv.name || '-'}</td>
+                  <td className="px-4 py-2 text-slate-600">{inv.email}</td>
+                  <td className="px-4 py-2 text-slate-600">{inv.department || '-'}</td>
+                  <td className="px-4 py-2">
+                    <select
+                      value={inv.role}
+                      onChange={e => handleChangeRole(inv.email, e.target.value)}
+                      disabled={inv.status === 'sent' || inv.status === 'accepted'}
+                      className="text-xs border border-slate-200 rounded px-2 py-1 bg-white"
+                    >
+                      {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <Badge variant={statusVariant(inv.status)}>{statusLabel(inv.status)}</Badge>
+                  </td>
+                  <td className="px-2 py-2">
+                    <button onClick={() => handleRemove(inv.email)} className="text-slate-300 hover:text-red-500 p-1" title="削除">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
       )}
 
-      <div className="flex justify-between mt-6 pt-4 border-t border-slate-200">
+      {showAddModal && (
+        <ManualAddModal departments={departments} onAdd={handleAddManual} onClose={() => setShowAddModal(false)} />
+      )}
+
+      <div className="flex justify-between pt-4 border-t border-slate-200">
         <Button variant="secondary" onClick={onBack}>戻る</Button>
-        <Button variant="secondary" onClick={() => window.location.href = `/projects/${projectId}/dashboard`}>設定完了</Button>
+        <Button onClick={() => window.location.href = `/projects/${projectId}/dashboard`}>設定完了</Button>
       </div>
-    </Card>
+    </div>
+  )
+}
+
+function ManualAddModal({ departments, onAdd, onClose }: { departments: Department[]; onAdd: (r: InviteeRow) => void; onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [department, setDepartment] = useState('')
+  const [role, setRole] = useState('department_manager')
+
+  return (
+    <Modal open title="メンバーを手動追加" onClose={onClose}>
+      <div className="space-y-4">
+        <Input label="氏名" value={name} onChange={e => setName(e.target.value)} placeholder="山田 太郎" />
+        <Input label="メールアドレス" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@company.co.jp" required />
+        <Select label="部署" value={department} onChange={e => setDepartment(e.target.value)}
+          options={departments.filter(d => d.level === 1).map(d => ({ value: d.name, label: d.name }))} placeholder="部署を選択" />
+        <Select label="権限" value={role} onChange={e => setRole(e.target.value)} options={ROLE_OPTIONS} />
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={onClose}>キャンセル</Button>
+          <Button disabled={!email} onClick={() => onAdd({ name, email, department, role, status: 'pending' })}>追加</Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
