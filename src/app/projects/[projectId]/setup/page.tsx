@@ -1076,17 +1076,34 @@ const ROLE_OPTIONS = [
 
 function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: () => void }) {
   const { departments } = useProjectContext()
-  const [invitees, setInvitees] = useState<InviteeRow[]>([])
+  const storageKey = `cyclone-invitees-${projectId}`
+  const [invitees, setInvitees] = useState<InviteeRow[]>(() => {
+    // Restore from localStorage on mount
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(storageKey)
+        if (saved) return JSON.parse(saved)
+      } catch {}
+    }
+    return []
+  })
   const [sending, setSending] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const { toast } = useToast()
   const supabase = createClient()
 
-  // Load existing invitations on mount
+  // Save to localStorage whenever invitees change
+  useEffect(() => {
+    if (invitees.length > 0) {
+      localStorage.setItem(storageKey, JSON.stringify(invitees))
+    }
+  }, [invitees, storageKey])
+
+  // Load existing invitations from DB on mount (merge with localStorage)
   useEffect(() => {
     const load = async () => {
       const { data, error } = await supabase.from('invitations').select('*').eq('project_id', projectId)
-      if (error) { console.warn('invitations load error (RLS):', error.message); return }
+      if (error) { console.warn('invitations load error:', error.message); return }
       if (data && data.length > 0) {
         setInvitees(data.map((inv: { email: string; role: string; status: string; department_id?: string }) => ({
           name: '', email: inv.email, department: departments.find(d => d.id === inv.department_id)?.name || '', position: '',
@@ -1100,6 +1117,8 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    // Reset input so same file can be re-selected
+    e.target.value = ''
     console.log('[Step5] Excel file selected:', file.name, file.size, 'bytes')
     try {
       const XLSX = await import('xlsx')
