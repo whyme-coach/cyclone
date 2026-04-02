@@ -873,6 +873,7 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [measures, setMeasures] = useState<Measure[]>([])
   const [links, setLinks] = useState<Array<{ strategy_id: string; measure_id: string }>>([])
+  const [measureDepts, setMeasureDepts] = useState<Record<string, string[]>>({}) // measureId -> deptId[]
   const [loading, setLoading] = useState(true)
   const [autoLinking, setAutoLinking] = useState(false)
   const [hasLinked, setHasLinked] = useState(false)
@@ -889,6 +890,12 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
         const sIds = sRes.data.map((s: Strategy) => s.id)
         const { data: lData } = await supabase.from('strategy_measure_links').select('strategy_id, measure_id').in('strategy_id', sIds)
         if (lData && lData.length > 0) { setLinks(lData); setHasLinked(true) }
+      }
+      // Restore measureDepts from department_id
+      if (mRes.data) {
+        const deptMap: Record<string, string[]> = {}
+        mRes.data.forEach((m: Measure) => { if (m.department_id) deptMap[m.id] = [m.department_id] })
+        setMeasureDepts(deptMap)
       }
       setLoading(false)
     }
@@ -914,18 +921,19 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
 必ず以下のJSON形式で返してください:
 {
   "links": [
-    {"strategy_index": 0, "measure_index": 0, "department_name": "担当部門名"}
+    {"strategy_index": 0, "measure_index": 0, "departments": ["主担当部門名", "関連部門名"]}
   ]
 }
 
 注意:
 - 各施策は最も関連する戦略1つに紐付けてください
-- department_nameは以下の「部」単位の部門一覧から必ず選んでください: ${deptNames || '(部門未登録)'}
-- 施策の内容から最も適切な担当部門を判断して自動的に割り振ってください
-- 複数の部門にまたがる施策は、主担当となる部門を1つ選んでください`,
+- departmentsは以下の「部」単位の部門一覧から選んでください: ${deptNames || '(部門未登録)'}
+- 施策の内容から関連する部門を最大3つまで割り振ってください
+- 配列の先頭が主担当部門、2番目以降が関連部門です
+- 最低1つは必ず割り振ってください`,
         messages: [{ role: 'user', content: `【戦略一覧】\n${stratStr}\n\n【施策一覧】\n${measStr}` }],
       })
-      const result = parseAIJsonResponse(aiData) as { links?: Array<{ strategy_index: number; measure_index: number; department_name?: string | null }> } | null
+      const result = parseAIJsonResponse(aiData) as { links?: Array<{ strategy_index: number; measure_index: number; departments?: string[] }> } | null
       if (result?.links) {
         // Clear existing links
         if (links.length > 0) {
@@ -935,6 +943,7 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
         }
 
         let count = 0
+        const newMeasureDepts: Record<string, string[]> = {}
         for (const link of result.links) {
           const stratId = strategies[link.strategy_index]?.id
           const measId = measures[link.measure_index]?.id
@@ -942,17 +951,24 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
             await supabase.from('strategy_measure_links').insert({ strategy_id: stratId, measure_id: measId, linked_by: 'ai' })
             setLinks(prev => [...prev, { strategy_id: stratId, measure_id: measId }])
 
-            // Update measure's department_id
-            if (link.department_name) {
-              const dept = departments.find(d => d.name === link.department_name)
-              if (dept) {
-                await supabase.from('measures').update({ department_id: dept.id }).eq('id', measId)
-                setMeasures(prev => prev.map(m => m.id === measId ? { ...m, department_id: dept.id } : m))
+            // Map department names to IDs (max 3)
+            const deptIds: string[] = []
+            if (link.departments) {
+              for (const dName of link.departments.slice(0, 3)) {
+                const dept = departments.find(d => d.name === dName)
+                if (dept) deptIds.push(dept.id)
               }
+            }
+            if (deptIds.length > 0) {
+              // Save primary department to measures table
+              await supabase.from('measures').update({ department_id: deptIds[0] }).eq('id', measId)
+              setMeasures(prev => prev.map(m => m.id === measId ? { ...m, department_id: deptIds[0] } : m))
+              newMeasureDepts[measId] = deptIds
             }
             count++
           }
         }
+        setMeasureDepts(newMeasureDepts)
         setHasLinked(true)
         toast(`${count}件の紐付けを生成しました`, 'success')
       }
@@ -960,9 +976,19 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
     finally { setAutoLinking(false) }
   }
 
-  const handleChangeDepartment = async (measureId: string, deptId: string) => {
-    await supabase.from('measures').update({ department_id: deptId || null }).eq('id', measureId)
-    setMeasures(prev => prev.map(m => m.id === measureId ? { ...m, department_id: deptId || undefined } : m))
+  const handleToggleDepartment = async (measureId: string, deptId: string) => {
+    const current = measureDepts[measureId] || []
+    let updated: string[]
+    if (current.includes(deptId)) {
+      updated = current.filter(id => id !== deptId)
+    } else {
+      if (current.length >= 3) { toast('部門は最大3つまでです', 'error'); return }
+      updated = [...current, deptId]
+    }
+    setMeasureDepts(prev => ({ ...prev, [measureId]: updated }))
+    // Save primary (first) department to DB
+    await supabase.from('measures').update({ department_id: updated[0] || null }).eq('id', measureId)
+    setMeasures(prev => prev.map(m => m.id === measureId ? { ...m, department_id: updated[0] || undefined } : m))
   }
 
   if (loading) return <Card><div className="flex justify-center py-8"><Spinner size="lg" /></div></Card>
@@ -1006,21 +1032,36 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
                   ) : (
                     <div className="space-y-2 ml-2">
                       {linkedMeasures.map(m => {
-                        const assignedDept = departments.find(d => d.id === m.department_id)
+                        const deptIds = measureDepts[m.id] || []
+                        const buDepts = departments.filter(d => d.level === 1)
                         return (
-                          <div key={m.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
-                            <span className="text-slate-400 shrink-0">└</span>
-                            <span className="text-sm text-slate-700 flex-1 min-w-0">{m.title}</span>
-                            <select
-                              value={m.department_id || ''}
-                              onChange={e => handleChangeDepartment(m.id, e.target.value)}
-                              className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 max-w-[160px]"
-                            >
-                              <option value="">部門を選択</option>
-                              {departments.filter(d => d.level === 1).map(d => (
-                                <option key={d.id} value={d.id}>{d.name}</option>
-                              ))}
-                            </select>
+                          <div key={m.id} className="bg-slate-50 rounded-lg px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-400 shrink-0">└</span>
+                              <span className="text-sm text-slate-700 flex-1 min-w-0">{m.title}</span>
+                            </div>
+                            <div className="flex gap-1.5 mt-1.5 ml-5 flex-wrap">
+                              {buDepts.map(d => {
+                                const selected = deptIds.includes(d.id)
+                                const isPrimary = deptIds[0] === d.id
+                                return (
+                                  <button
+                                    key={d.id}
+                                    onClick={() => handleToggleDepartment(m.id, d.id)}
+                                    className={cn(
+                                      'text-[11px] px-2 py-0.5 rounded-full border transition-colors',
+                                      selected
+                                        ? isPrimary
+                                          ? 'bg-blue-600 text-white border-blue-600'
+                                          : 'bg-blue-100 text-blue-700 border-blue-300'
+                                        : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                                    )}
+                                  >
+                                    {d.name}{isPrimary ? '（主）' : ''}
+                                  </button>
+                                )
+                              })}
+                            </div>
                           </div>
                         )
                       })}
