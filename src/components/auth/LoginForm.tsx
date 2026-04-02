@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 
 export function LoginForm() {
@@ -25,44 +24,24 @@ export function LoginForm() {
     }
 
     try {
-      // Call Supabase auth API directly to avoid gotrue-js lock issues
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
 
       const data = await res.json()
 
-      if (!res.ok || !data.access_token) {
-        const msg = data.error_description || data.msg || data.error || 'ログインに失敗しました'
-        setError(
-          msg === 'Invalid login credentials'
-            ? 'メールアドレスまたはパスワードが正しくありません'
-            : msg === 'Email not confirmed'
-              ? 'メールアドレスが確認されていません'
-              : msg
-        )
+      if (!res.ok) {
+        setError(data.error || 'ログインに失敗しました')
         setLoading(false)
         return
       }
 
-      // Set the session in Supabase client
-      const supabase = createClient()
-      await supabase.auth.setSession({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-      })
-
-      // Hard navigation to ensure middleware picks up the cookie
+      // Server-side login sets cookies automatically via Supabase SSR
+      // Hard navigation to pick up the new cookies
       window.location.href = '/projects'
-    } catch (err) {
+    } catch {
       setError('ネットワークエラーが発生しました。もう一度お試しください。')
       setLoading(false)
     }
