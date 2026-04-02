@@ -6,17 +6,20 @@ import { useAuth } from '@/hooks/useAuth'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Textarea } from '@/components/ui/Textarea'
 import { useToast } from '@/components/ui/Toast'
 import { createClient } from '@/lib/supabase/client'
+import { callAI, getAITextResponse } from '@/lib/ai/helpers'
+import { MEETING_MATERIALS_SYSTEM_PROMPT } from '@/lib/ai/prompts/meeting-materials'
 import { PROGRESS_STATUS_LABELS } from '@/types/roles'
 import { formatDate } from '@/lib/utils'
 import type { ProgressReport, ReportComment, UserProfile, ProgressStatus } from '@/types'
 
 export default function ReportsTimelinePage() {
-  const { project, departments } = useProjectContext()
+  const { project, departments, role } = useProjectContext()
   const { user } = useAuth()
   const [reports, setReports] = useState<(ProgressReport & { reporter?: UserProfile; comments?: (ReportComment & { user?: UserProfile })[] })[]>([])
   const [loading, setLoading] = useState(true)
@@ -82,9 +85,57 @@ export default function ReportsTimelinePage() {
 
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
 
+  const [showMeetingPrompt, setShowMeetingPrompt] = useState(false)
+  const [meetingPrompt, setMeetingPrompt] = useState('')
+  const [generatingPrompt, setGeneratingPrompt] = useState(false)
+
+  const handleGenerateMeetingPrompt = async () => {
+    setGeneratingPrompt(true)
+    try {
+      const reportsText = reports.slice(0, 20).map(r =>
+        `[${r.reporter?.full_name || ''}] ${r.status}: ${r.activities_completed || '-'}`
+      ).join('\n')
+      const aiData = await callAI('meeting-materials', {
+        system: MEETING_MATERIALS_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: `${project?.name}の月次報告をもとに、経営会議資料のプロンプトを生成してください。\n\n【報告一覧】\n${reportsText || '報告なし'}` }],
+      })
+      const text = getAITextResponse(aiData)
+      setMeetingPrompt(text)
+      setShowMeetingPrompt(true)
+    } catch { toast('プロンプト生成に失敗しました', 'error') }
+    finally { setGeneratingPrompt(false) }
+  }
+
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">報告タイムライン</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-slate-900">報告タイムライン</h2>
+        {(role === 'consultant' || role === 'company_admin') && reports.length > 0 && (
+          <Button variant="secondary" onClick={handleGenerateMeetingPrompt} loading={generatingPrompt}>
+            経営会議資料プロンプト
+          </Button>
+        )}
+      </div>
+
+      {showMeetingPrompt && (
+        <Modal open title="経営会議資料プロンプト" onClose={() => setShowMeetingPrompt(false)} size="lg">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-500">以下のプロンプトをClaude webに貼り付けて、パワーポイント形式の資料を生成できます。</p>
+            <textarea
+              value={meetingPrompt}
+              readOnly
+              rows={15}
+              className="w-full px-4 py-3 text-sm text-slate-900 border border-slate-300 rounded-lg bg-slate-50 font-mono"
+            />
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => { navigator.clipboard.writeText(meetingPrompt); toast('コピーしました', 'success') }}>
+                クリップボードにコピー
+              </Button>
+              <Button onClick={() => setShowMeetingPrompt(false)}>閉じる</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {reports.length === 0 ? (
         <Card><EmptyState title="報告がまだありません" description="各部門のユーザーが進捗報告を提出するとここに表示されます" /></Card>

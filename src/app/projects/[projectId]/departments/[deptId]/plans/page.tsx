@@ -13,6 +13,8 @@ import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useToast } from '@/components/ui/Toast'
+import { callAI, parseAIJsonResponse } from '@/lib/ai/helpers'
+import { SUGGEST_ACTION_ITEMS_SYSTEM_PROMPT, SUGGEST_ACTION_ITEMS_USER_PROMPT } from '@/lib/ai/prompts/suggest-action-items'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { ACTION_ITEM_STATUS_LABELS } from '@/types/roles'
@@ -107,6 +109,41 @@ export default function ActionPlansPage() {
     }
   }
 
+  const [suggesting, setSuggesting] = useState(false)
+
+  const handleSuggestItems = async () => {
+    if (!project || !activePlanId) return
+    setSuggesting(true)
+    try {
+      // Get measures for this department
+      const { data: measures } = await supabase.from('measures').select('title').eq('department_id', deptId).limit(5)
+      const { data: kpis } = await supabase.from('kpis').select('name, target_value, target_unit').eq('department_id', deptId).limit(5)
+      const measStr = measures?.map((m: { title: string }) => m.title).join(', ') || ''
+      const kpiStr = kpis?.map((k: { name: string; target_value?: number; target_unit?: string }) => `${k.name}(${k.target_value || ''}${k.target_unit || ''})`).join(', ') || ''
+      const aiData = await callAI('suggest-action-items', {
+        system: SUGGEST_ACTION_ITEMS_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: SUGGEST_ACTION_ITEMS_USER_PROMPT(measStr, kpiStr, department?.name || '', project.fiscal_year, 3) }],
+      })
+      const result = parseAIJsonResponse(aiData) as { action_items?: Array<{ title: string; description?: string; start_month: number; end_month: number; deliverable?: string }> } | null
+      if (result?.action_items) {
+        for (const item of result.action_items) {
+          const startDate = `${project.fiscal_year}-${String(item.start_month).padStart(2, '0')}-01`
+          const endDate = new Date(project.fiscal_year, item.end_month, 0).toISOString().split('T')[0]
+          const { data } = await supabase.from('action_items').insert({
+            action_plan_id: activePlanId, title: item.title, description: item.description || '',
+            start_date: startDate, end_date: endDate, deliverable: item.deliverable || '',
+            sort_order: (plans.find(p => p.id === activePlanId)?.action_items.length || 0),
+          }).select().single()
+          if (data) {
+            setPlans(prev => prev.map(p => p.id === activePlanId ? { ...p, action_items: [...p.action_items, data] } : p))
+          }
+        }
+        toast(`${result.action_items.length}件のアクションを追加しました`, 'success')
+      }
+    } catch { toast('AI提案に失敗しました', 'error') }
+    finally { setSuggesting(false) }
+  }
+
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
 
   const activePlan = plans.find(p => p.id === activePlanId) || plans[0]
@@ -155,9 +192,14 @@ export default function ActionPlansPage() {
               <Card padding={false}>
                 <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                   <CardTitle>{activePlan.title}</CardTitle>
-                  <Button size="sm" onClick={() => { setActivePlanId(activePlan.id); setEditingItem(null); setShowItemModal(true) }}>
-                    アクションを追加
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => { setActivePlanId(activePlan.id); handleSuggestItems() }} loading={suggesting}>
+                      AI提案
+                    </Button>
+                    <Button size="sm" onClick={() => { setActivePlanId(activePlan.id); setEditingItem(null); setShowItemModal(true) }}>
+                      アクションを追加
+                    </Button>
+                  </div>
                 </div>
                 {activePlan.action_items.length === 0 ? (
                   <div className="p-8 text-center text-sm text-slate-500">
