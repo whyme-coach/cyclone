@@ -627,6 +627,8 @@ function OrgChartStep({ projectId, onNext, onBack, supabase, toast, refreshProje
         const { data } = await supabase.from('departments').insert({
           project_id: projectId, name: dept.name, level: dept.level,
           sort_order: dept.sort_order, parent_id: parentId || null,
+          role_description: dept.role_description || null,
+          responsibilities: dept.responsibilities || [],
         }).select('id').single()
         if (data) parentMap[dept.name] = data.id
       }
