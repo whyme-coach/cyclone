@@ -1099,16 +1099,22 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
     }
   }, [invitees, storageKey])
 
-  // Load existing invitations from DB on mount (merge with localStorage)
+  // Merge DB invitations with localStorage data on mount
   useEffect(() => {
     const load = async () => {
       const { data, error } = await supabase.from('invitations').select('*').eq('project_id', projectId)
       if (error) { console.warn('invitations load error:', error.message); return }
       if (data && data.length > 0) {
-        setInvitees(data.map((inv: { email: string; role: string; status: string; department_id?: string }) => ({
+        const dbInvitees = data.map((inv: { email: string; role: string; status: string; department_id?: string }) => ({
           name: '', email: inv.email, department: departments.find(d => d.id === inv.department_id)?.name || '', position: '',
           role: inv.role, status: inv.status === 'accepted' ? 'accepted' as const : 'sent' as const,
-        })))
+        }))
+        // Merge: DB records override localStorage for same email, add new ones
+        setInvitees(prev => {
+          const dbEmails = new Set(dbInvitees.map((i: InviteeRow) => i.email))
+          const localOnly = prev.filter(i => !dbEmails.has(i.email))
+          return [...dbInvitees, ...localOnly]
+        })
       }
     }
     load()
