@@ -25,18 +25,32 @@ export default function NewProjectPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user || !organization) {
-      toast('組織情報が見つかりません。再ログインしてください。', 'error')
+    if (!user) {
+      toast('ログインしてください。', 'error')
       return
     }
 
     setLoading(true)
     try {
+      // Ensure organization exists
+      let orgId = organization?.id
+      if (!orgId) {
+        const res = await fetch('/api/setup-org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        })
+        if (!res.ok) throw new Error('組織の作成に失敗しました')
+        const orgData = await res.json()
+        orgId = orgData.organization?.id
+        if (!orgId) throw new Error('組織の作成に失敗しました')
+      }
+
       // Create company
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .insert({
-          organization_id: organization.id,
+          organization_id: orgId,
           name: companyName,
           fiscal_year_end: parseInt(fiscalYearEnd),
         })
@@ -49,7 +63,7 @@ export default function NewProjectPage() {
       const { data: project, error: projectError } = await supabase
         .from('projects')
         .insert({
-          organization_id: organization.id,
+          organization_id: orgId,
           company_id: company.id,
           name: projectName || `${companyName} ${fiscalYear}年度`,
           fiscal_year: fiscalYear,
