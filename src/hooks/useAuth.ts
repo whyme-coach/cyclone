@@ -92,12 +92,19 @@ export function useAuth(): UseAuthReturn {
 
   const signIn = async (email: string, password: string) => {
     setError(null)
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) {
-      setError(err.message === 'Invalid login credentials'
+      const msg = err.message === 'Invalid login credentials'
         ? 'メールアドレスまたはパスワードが正しくありません'
-        : err.message)
+        : err.message === 'Email not confirmed'
+          ? 'メールアドレスが確認されていません。確認メールのリンクをクリックしてください。'
+          : err.message
+      setError(msg)
       throw err
+    }
+    if (!data.session) {
+      setError('ログインに失敗しました。もう一度お試しください。')
+      throw new Error('No session returned')
     }
   }
 
