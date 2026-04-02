@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { User } from '@supabase/supabase-js'
+import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js'
 import type { UserProfile, Organization, OrganizationMember } from '@/types'
 
 interface UseAuthReturn {
@@ -19,9 +19,6 @@ interface UseAuthReturn {
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>
 }
 
-// Module-level singleton to avoid re-creation
-const supabase = createClient()
-
 export function useAuth(): UseAuthReturn {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -29,73 +26,78 @@ export function useAuth(): UseAuthReturn {
   const [orgRole, setOrgRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const initialized = useRef(false)
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
-    if (initialized.current) return
-    initialized.current = true
-
-    const init = async () => {
+    const getUser = async () => {
       try {
-        const { data: { user: currentUser } } = await supabase.auth.getUser()
-        setUser(currentUser)
-        if (currentUser) {
-          await loadUserData(currentUser.id)
+        const { data: { user }, error } = await supabase.auth.getUser()
+        if (error) {
+          setUser(null)
+        } else {
+          setUser(user)
         }
       } catch {
-        // ignore
+        setUser(null)
       } finally {
         setLoading(false)
       }
     }
-
-    const loadUserData = async (userId: string) => {
-      const [profileRes, orgRes] = await Promise.all([
-        supabase.from('user_profiles').select('*').eq('id', userId).single(),
-        supabase.from('organization_members').select('*, organization:organizations(*)').eq('user_id', userId).single(),
-      ])
-      if (profileRes.data) setProfile(profileRes.data)
-      if (orgRes.data) {
-        const member = orgRes.data as OrganizationMember & { organization: Organization }
-        setOrganization(member.organization)
-        setOrgRole(member.role)
-      }
-    }
-
-    init()
+    getUser()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event: string, session: { user: User } | null) => {
-        const u = session?.user ?? null
-        setUser(u)
-        if (u) {
-          await loadUserData(u.id)
-        } else {
-          setProfile(null)
-          setOrganization(null)
-          setOrgRole(null)
-        }
+      (_event: AuthChangeEvent, session: Session | null) => {
+        setUser(session?.user ?? null)
+        setLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
-  }, [])
+    return () => subscription?.unsubscribe()
+  }, [supabase])
+
+  const fetchUserData = useCallback(async () => {
+    if (!user) return
+
+    // Fetch profile
+    const { data: profileData } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+    if (profileData) setProfile(profileData)
+
+    // Fetch organization membership
+    const { data: memberships } = await supabase
+      .from('organization_members')
+      .select('organization_id, role')
+      .eq('user_id', user.id)
+      .limit(1)
+
+    const membership = memberships?.[0]
+    if (membership) {
+      setOrgRole(membership.role)
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', membership.organization_id)
+        .single()
+      if (org) setOrganization(org)
+    }
+  }, [user, supabase])
+
+  useEffect(() => {
+    if (user) fetchUserData()
+  }, [user, fetchUserData])
 
   const signIn = async (email: string, password: string) => {
     setError(null)
-    const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
-    if (err) {
-      const msg = err.message === 'Invalid login credentials'
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      const msg = error.message === 'Invalid login credentials'
         ? 'メールアドレスまたはパスワードが正しくありません'
-        : err.message === 'Email not confirmed'
-          ? 'メールアドレスが確認されていません。確認メールのリンクをクリックしてください。'
-          : err.message
+        : error.message
       setError(msg)
-      throw err
-    }
-    if (!data.session) {
-      setError('ログインに失敗しました。もう一度お試しください。')
-      throw new Error('No session returned')
+      throw error
     }
   }
 
@@ -117,7 +119,8 @@ export function useAuth(): UseAuthReturn {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) console.error('Sign out error:', error)
     setUser(null)
     setProfile(null)
     setOrganization(null)

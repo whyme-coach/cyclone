@@ -1,48 +1,33 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 
 export function LoginForm() {
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { signIn, error } = useAuth()
+  const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
-    setError(null)
 
+    // Read from DOM to handle browser autofill
     const formData = new FormData(formRef.current!)
     const email = (formData.get('email') as string) || ''
     const password = (formData.get('password') as string) || ''
 
-    if (!email || !password) {
-      setError('メールアドレスとパスワードを入力してください')
-      setLoading(false)
-      return
-    }
+    if (!email || !password) return
 
+    setLoading(true)
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || 'ログインに失敗しました')
-        setLoading(false)
-        return
-      }
-
-      // Server-side login sets cookies automatically via Supabase SSR
-      // Hard navigation to pick up the new cookies
-      window.location.href = '/projects'
+      await signIn(email, password)
+      router.push('/projects')
     } catch {
-      setError('ネットワークエラーが発生しました。もう一度お試しください。')
+      // error is set in useAuth
+    } finally {
       setLoading(false)
     }
   }
@@ -55,11 +40,10 @@ export function LoginForm() {
         </div>
       )}
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
+        <label className="block text-sm font-medium text-slate-700 mb-1">
           メールアドレス<span className="text-red-500 ml-0.5">*</span>
         </label>
         <input
-          id="email"
           name="email"
           type="email"
           autoComplete="email"
@@ -69,11 +53,10 @@ export function LoginForm() {
         />
       </div>
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
+        <label className="block text-sm font-medium text-slate-700 mb-1">
           パスワード<span className="text-red-500 ml-0.5">*</span>
         </label>
         <input
-          id="password"
           name="password"
           type="password"
           autoComplete="current-password"
