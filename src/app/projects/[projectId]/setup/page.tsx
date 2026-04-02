@@ -1085,7 +1085,7 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
 // ============================================================
 // Step 5: Invite Members
 // ============================================================
-type InviteeRow = { name: string; email: string; department: string; role: string; status: 'pending' | 'sending' | 'sent' | 'accepted' | 'error' }
+type InviteeRow = { name: string; email: string; department: string; position: string; role: string; status: 'pending' | 'sending' | 'sent' | 'accepted' | 'error' }
 
 const ROLE_OPTIONS = [
   { value: 'department_manager', label: '一般' },
@@ -1107,7 +1107,7 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
       const { data } = await supabase.from('invitations').select('*').eq('project_id', projectId)
       if (data && data.length > 0) {
         setInvitees(data.map((inv: { email: string; role: string; status: string; department_id?: string }) => ({
-          name: '', email: inv.email, department: departments.find(d => d.id === inv.department_id)?.name || '',
+          name: '', email: inv.email, department: departments.find(d => d.id === inv.department_id)?.name || '', position: '',
           role: inv.role, status: inv.status === 'accepted' ? 'accepted' as const : 'sent' as const,
         })))
       }
@@ -1125,13 +1125,23 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws)
 
-      const parsed: InviteeRow[] = rows.map(row => {
-        // Flexible column matching (部署/部門, 氏名/名前, メール/email)
-        const dept = row['部署'] || row['部署名'] || row['部門'] || row['department'] || ''
-        const name = row['氏名'] || row['名前'] || row['name'] || ''
-        const email = row['メールアドレス'] || row['メール'] || row['email'] || row['Email'] || ''
-        return { name, email: email.trim(), department: dept, role: 'department_manager', status: 'pending' as const }
-      }).filter(r => r.email && r.email.includes('@'))
+      // Flexible column matching by partial keyword search
+      const findCol = (row: Record<string, string>, keywords: string[]): string => {
+        for (const key of Object.keys(row)) {
+          const k = key.toLowerCase()
+          if (keywords.some(kw => k.includes(kw))) return String(row[key] || '').trim()
+        }
+        return ''
+      }
+
+      const parsed: InviteeRow[] = rows.map(row => ({
+        department: findCol(row, ['部署', '部門', 'department', 'dept']),
+        position: findCol(row, ['役職', '職位', '肩書', 'position', 'title']),
+        name: findCol(row, ['氏名', '名前', '社員名', 'name']),
+        email: findCol(row, ['メール', 'email', 'mail', 'e-mail']),
+        role: 'department_manager',
+        status: 'pending' as const,
+      })).filter(r => r.email && r.email.includes('@'))
 
       setInvitees(prev => {
         const existingEmails = new Set(prev.map(i => i.email))
@@ -1223,6 +1233,7 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
                 <th className="text-left px-4 py-2">氏名</th>
                 <th className="text-left px-4 py-2">メールアドレス</th>
                 <th className="text-left px-4 py-2">部署</th>
+                <th className="text-left px-4 py-2">役職</th>
                 <th className="text-left px-4 py-2">権限</th>
                 <th className="text-left px-4 py-2">ステータス</th>
                 <th className="w-10"></th>
@@ -1234,6 +1245,7 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
                   <td className="px-4 py-2 text-slate-700">{inv.name || '-'}</td>
                   <td className="px-4 py-2 text-slate-600">{inv.email}</td>
                   <td className="px-4 py-2 text-slate-600">{inv.department || '-'}</td>
+                  <td className="px-4 py-2 text-slate-600">{inv.position || '-'}</td>
                   <td className="px-4 py-2">
                     <select
                       value={inv.role}
@@ -1275,6 +1287,7 @@ function ManualAddModal({ departments, onAdd, onClose }: { departments: Departme
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [department, setDepartment] = useState('')
+  const [position, setPosition] = useState('')
   const [role, setRole] = useState('department_manager')
 
   return (
@@ -1284,10 +1297,11 @@ function ManualAddModal({ departments, onAdd, onClose }: { departments: Departme
         <Input label="メールアドレス" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@company.co.jp" required />
         <Select label="部署" value={department} onChange={e => setDepartment(e.target.value)}
           options={departments.filter(d => d.level === 1).map(d => ({ value: d.name, label: d.name }))} placeholder="部署を選択" />
+        <Input label="役職" value={position} onChange={e => setPosition(e.target.value)} placeholder="部長、課長 等" />
         <Select label="権限" value={role} onChange={e => setRole(e.target.value)} options={ROLE_OPTIONS} />
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>キャンセル</Button>
-          <Button disabled={!email} onClick={() => onAdd({ name, email, department, role, status: 'pending' })}>追加</Button>
+          <Button disabled={!email} onClick={() => onAdd({ name, email, department, position, role, status: 'pending' })}>追加</Button>
         </div>
       </div>
     </Modal>
