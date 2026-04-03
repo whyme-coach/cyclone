@@ -733,6 +733,45 @@ function WoopIndicator({ currentPhase }: { currentPhase: number }) {
   )
 }
 
+function generateSuggestions(messages: ChatMessage[], woopPhase: number, kpi: KPI): string[] {
+  const lastAi = [...messages].reverse().find(m => m.role === 'assistant')?.content || ''
+
+  if (woopPhase === 0) {
+    // Wish: 願望フェーズ
+    return [
+      `${kpi.name}が達成できれば、部門の評価が大きく上がると思います`,
+      '会社全体の売上目標にも直結する重要な指標だと考えています',
+      '正直、まだ達成のイメージが湧いていないので一緒に考えたいです',
+      '昨年は未達だったので、今年こそ達成して自信をつけたいです',
+    ]
+  }
+  if (woopPhase === 1) {
+    // Outcome: 成果イメージ
+    return [
+      '毎月の数字が安定して目標を上回っている状態が理想です',
+      'チーム全員が進捗を把握して、自主的に改善できている状態です',
+      '顧客から「対応が早くなった」と言われるようになりたいです',
+      '経営会議で胸を張って報告できるくらいの成果を出したいです',
+    ]
+  }
+  if (woopPhase === 2) {
+    // Obstacle: 障害
+    return [
+      '人手不足で、通常業務に追われて改善活動の時間が取れません',
+      '部門間の連携がうまくいかず、情報共有が滞ることがあります',
+      'メンバーのスキルにバラつきがあり、特定の人に負荷が集中しています',
+      '過去に似た取り組みをしたが定着せず、形骸化してしまいました',
+    ]
+  }
+  // Plan: 対策計画
+  return [
+    'まずは現状の数字を正確に把握するところから始めたいです',
+    '週1回のミーティングで進捗を確認する仕組みを作りたいです',
+    '小さく始めて成果が出たら横展開するアプローチが良いと思います',
+    '外部の知見も取り入れながら、3ヶ月で形にしたいです',
+  ]
+}
+
 function Step2CoachChat({
   kpi,
   messages,
@@ -762,6 +801,11 @@ function Step2CoachChat({
   }
 
   const woopPhase = detectWoopPhase(messages)
+  const suggestions = generateSuggestions(messages, woopPhase, kpi)
+
+  // Only show suggestions when AI has responded and user hasn't typed yet
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
+  const showSuggestions = lastMsg?.role === 'assistant' && !userInput.trim() && !aiLoading
 
   return (
     <>
@@ -787,7 +831,6 @@ function Step2CoachChat({
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.filter(m => m.role === 'assistant' || messages.indexOf(m) > 0).map((msg, i) => {
-            // Skip the initial user prompt (index 0) from display
             if (msg.role === 'user' && messages.indexOf(msg) === 0) return null
             return (
               <div
@@ -820,8 +863,38 @@ function Step2CoachChat({
           <div ref={chatEndRef} />
         </div>
 
+        {/* Suggestion chips */}
+        {showSuggestions && (
+          <div style={{ padding: '8px 16px 0', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => onSetUserInput(s)}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  color: '#3b82f6',
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: 20,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap' as const,
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#dbeafe'; e.currentTarget.style.borderColor = '#93c5fd' }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe' }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Input area */}
-        <div className="border-t border-slate-200 p-4">
+        <div className="border-t border-slate-200 p-4" style={{ marginTop: showSuggestions ? 8 : 0 }}>
           <div className="flex gap-2">
             <div className="flex-1">
               <textarea
