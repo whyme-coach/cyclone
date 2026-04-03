@@ -662,6 +662,77 @@ function Step1KPISelection({
 
 // ========== Step 2: AI Coach Chat ==========
 
+const WOOP_STEPS = [
+  { key: 'wish', label: 'Wish', sub: '願望', color: '#3b82f6', keywords: ['願望', '良いこと', '達成すると', 'どんな意味', 'なぜ大切', 'なぜこの'] },
+  { key: 'outcome', label: 'Outcome', sub: '成果イメージ', color: '#8b5cf6', keywords: ['理想', '具体的に想像', 'イメージ', '状態', '雰囲気', '反応', '数字が出'] },
+  { key: 'obstacle', label: 'Obstacle', sub: '障害', color: '#f59e0b', keywords: ['障害', '妨げ', '困難', '課題', 'リスク', '阻む', 'もし', 'if-then', '対処'] },
+  { key: 'plan', label: 'Plan', sub: '対策計画', color: '#10b981', keywords: ['アクション', '具体的に', 'いつから', 'いつまで', '成果物', 'スケジュール', '計画', 'まとめ'] },
+] as const
+
+function detectWoopPhase(messages: ChatMessage[]): number {
+  // Analyze assistant messages to detect which WOOP phase we're in
+  const assistantMsgs = messages.filter(m => m.role === 'assistant').map(m => m.content.toLowerCase())
+  if (assistantMsgs.length === 0) return 0
+
+  const lastMsg = assistantMsgs[assistantMsgs.length - 1]
+  const allText = assistantMsgs.join(' ')
+
+  // Check from Plan backwards - later phases take priority
+  for (let i = WOOP_STEPS.length - 1; i >= 0; i--) {
+    const step = WOOP_STEPS[i]
+    const matchCount = step.keywords.filter(kw => lastMsg.includes(kw)).length
+    if (matchCount >= 2) return i
+  }
+
+  // Fallback: estimate by message count
+  const rounds = Math.floor(assistantMsgs.length)
+  if (rounds <= 1) return 0  // Wish
+  if (rounds <= 2) return 1  // Outcome
+  if (rounds <= 4) return 2  // Obstacle
+  return 3                    // Plan
+}
+
+function WoopIndicator({ currentPhase }: { currentPhase: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '12px 16px', background: '#f8fafc', borderRadius: 12, marginBottom: 0 }}>
+      {WOOP_STEPS.map((step, i) => (
+        <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, position: 'relative' }}>
+            {/* Circle */}
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: i <= currentPhase ? step.color : '#e2e8f0',
+              color: i <= currentPhase ? '#fff' : '#94a3b8',
+              fontSize: 14, fontWeight: 700,
+              boxShadow: i === currentPhase ? `0 0 0 4px ${step.color}33` : 'none',
+              transition: 'all 0.5s ease',
+            }}>
+              {i < currentPhase ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+              ) : (
+                <span>{step.label[0]}</span>
+              )}
+            </div>
+            {/* Label */}
+            <div style={{ marginTop: 4, textAlign: 'center' }}>
+              <p style={{ fontSize: 11, fontWeight: i === currentPhase ? 700 : 500, color: i <= currentPhase ? step.color : '#94a3b8', transition: 'all 0.3s ease', margin: 0 }}>
+                {step.label}
+              </p>
+              <p style={{ fontSize: 10, color: i === currentPhase ? '#475569' : '#cbd5e1', margin: 0, transition: 'all 0.3s ease' }}>
+                {step.sub}
+              </p>
+            </div>
+          </div>
+          {/* Connector line */}
+          {i < WOOP_STEPS.length - 1 && (
+            <div style={{ width: 40, height: 2, background: i < currentPhase ? WOOP_STEPS[i + 1].color : '#e2e8f0', transition: 'background 0.5s ease', marginBottom: 20 }} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Step2CoachChat({
   kpi,
   messages,
@@ -690,6 +761,8 @@ function Step2CoachChat({
     }
   }
 
+  const woopPhase = detectWoopPhase(messages)
+
   return (
     <>
       {/* KPI info header */}
@@ -706,8 +779,11 @@ function Step2CoachChat({
         </div>
       </Card>
 
+      {/* WOOP Indicator */}
+      <WoopIndicator currentPhase={woopPhase} />
+
       {/* Chat area */}
-      <Card padding={false} className="flex flex-col" style={{ height: '60vh' }}>
+      <Card padding={false} className="flex flex-col" style={{ height: '55vh' }}>
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.filter(m => m.role === 'assistant' || messages.indexOf(m) > 0).map((msg, i) => {
