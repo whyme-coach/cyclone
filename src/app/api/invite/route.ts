@@ -38,8 +38,9 @@ export async function POST(req: Request) {
   }, { onConflict: 'project_id,email' })
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+  const redirectTo = `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`
 
-  // Check if user exists by querying user_profiles table (faster than listUsers)
+  // Check if user already has a profile (= confirmed active user)
   const { data: existingProfile } = await admin
     .from('user_profiles')
     .select('id')
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
     .single()
 
   if (existingProfile) {
-    // Active user exists - add directly to project
+    // Active user - add to project directly
     await admin.from('project_members').upsert({
       project_id: projectId,
       user_id: existingProfile.id,
@@ -62,45 +63,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, alreadyActive: true })
   }
 
-  // No active user - send invitation email
-  // First, try to delete any existing unconfirmed auth user
+  // Try invite (new user)
   try {
-    const { data: authUsers } = await admin.auth.admin.listUsers({ page: 1, perPage: 1 })
-    // Use a direct approach - just try to invite, Supabase will handle duplicates
-  } catch {}
-
-  try {
-    // generateLink instead of inviteUserByEmail to get more control
-    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-      type: 'invite',
-      email,
-      options: {
-        redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`,
-        data: { invited_project_id: projectId, invited_role: role },
-      },
+    const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo,
+      data: { invited_project_id: projectId, invited_role: role },
     })
 
-    if (linkErr) {
-      console.error('Generate link error:', linkErr.message)
-      // If user already exists, try magiclink instead
-      if (linkErr.message.includes('already been registered') || linkErr.message.includes('already exists')) {
-        const { error: magicErr } = await admin.auth.admin.generateLink({
-          type: 'magiclink',
+    if (inviteErr) {
+      // If already registered (unconfirmed), send magic link instead
+      if (inviteErr.message?.includes('already') || inviteErr.status === 422) {
+        // Use Supabase client signInWithOtp to send a magic link email
+        const { error: otpErr } = await admin.auth.signInWithOtp({
           email,
-          options: {
-            redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invitation?project=${projectId}`,
-          },
+          options: { emailRedirectTo: redirectTo },
         })
-        if (magicErr) {
-          console.error('Magic link error:', magicErr.message)
-          return NextResponse.json({ success: true, emailSent: false, reason: magicErr.message })
+        if (otpErr) {
+          console.error('OTP error:', otpErr.message)
+          return NextResponse.json({ success: true, emailSent: false, reason: otpErr.message })
         }
         return NextResponse.json({ success: true, emailSent: true, method: 'magiclink' })
       }
-      return NextResponse.json({ success: true, emailSent: false, reason: linkErr.message })
+      console.error('Invite error:', inviteErr.message)
+      return NextResponse.json({ success: true, emailSent: false, reason: inviteErr.message })
     }
 
-    return NextResponse.json({ success: true, emailSent: true })
+    return NextResponse.json({ success: true, emailSent: true, method: 'invite' })
   } catch (err) {
     console.error('Invite exception:', err)
     return NextResponse.json({ success: true, emailSent: false })
