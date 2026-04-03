@@ -213,7 +213,7 @@ export default function KPIsPage() {
         {/* Mind-Map Tree */}
         {tree && !generating && (
           <div className="overflow-x-auto pb-4">
-            <div style={{ minWidth: 1200, padding: '16px 0' }}>
+            <div style={{ minWidth: 1360, padding: '16px 0' }}>
               {tree.map((kgi, gi) => (
                 <div key={gi} style={{ display: 'flex', alignItems: 'center', marginBottom: gi < tree.length - 1 ? 48 : 0 }}>
                   {/* KGI Node */}
@@ -301,7 +301,7 @@ export default function KPIsPage() {
                                   <div
                                     onClick={() => setSelectedTreeKpi({ kpi, ksfMeasureId: ksf.ksf_measure_id })}
                                     style={{
-                                      width: 315,
+                                      width: 470,
                                       borderRadius: 12,
                                       padding: '10px 14px',
                                       margin: '3px 0',
