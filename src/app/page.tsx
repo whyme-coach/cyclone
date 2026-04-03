@@ -2,88 +2,79 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useRef } from 'react'
 import { LoginForm } from '@/components/auth/LoginForm'
 import { Spinner } from '@/components/ui/Spinner'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
-// Check hash synchronously before first render
-function getInitialState(): { processing: boolean; authError: string | null } {
-  if (typeof window === 'undefined') return { processing: false, authError: null }
-  const hash = window.location.hash
-  if (hash.includes('error=')) {
-    const params = new URLSearchParams(hash.replace('#', ''))
-    const errorCode = params.get('error_code') || ''
-    const errorDesc = params.get('error_description') || ''
-    const msg = (errorCode === 'otp_expired' || errorDesc.includes('expired'))
-      ? '招待リンクの有効期限が切れています。管理者に再招待を依頼してください。'
-      : `認証エラー: ${errorDesc.replace(/\+/g, ' ')}`
-    window.history.replaceState(null, '', '/')
-    return { processing: false, authError: msg }
-  }
-  if (hash.includes('access_token')) {
-    return { processing: true, authError: null }
-  }
-  return { processing: false, authError: null }
-}
-
 export default function LoginPage() {
-  const initial = getInitialState()
-  const [processing, setProcessing] = useState(initial.processing)
-  const [authError] = useState(initial.authError)
-  const router = useRouter()
+  const [mode, setMode] = useState<'loading' | 'login' | 'processing' | 'error'>('loading')
+  const [authError, setAuthError] = useState<string | null>(null)
+  const processed = useRef(false)
 
   useEffect(() => {
-    if (!processing) return
-    const supabase = createClient()
+    if (processed.current) return
+    processed.current = true
 
-    // Supabase client detects hash fragment and sets session
-    const handleAuth = async () => {
-      // Wait a moment for Supabase to process the hash
-      await new Promise(r => setTimeout(r, 500))
+    const hash = window.location.hash
 
-      const { data } = await supabase.auth.getSession() as { data: { session: { user: { user_metadata?: Record<string, string> } } } | null }
-      const session = (data as { session?: { user: { user_metadata?: Record<string, string> } } })?.session
+    // Check for error in fragment
+    if (hash.includes('error=')) {
+      const params = new URLSearchParams(hash.replace('#', ''))
+      const errorCode = params.get('error_code') || ''
+      const errorDesc = params.get('error_description') || ''
+      const msg = (errorCode === 'otp_expired' || errorDesc.includes('expired'))
+        ? '招待リンクの有効期限が切れています。管理者に再招待を依頼してください。'
+        : `認証エラー: ${errorDesc.replace(/\+/g, ' ')}`
+      setAuthError(msg)
+      setMode('error')
+      window.history.replaceState(null, '', '/')
+      return
+    }
 
-      if (session) {
-        const invitedProjectId = session.user?.user_metadata?.invited_project_id
-        if (invitedProjectId) {
-          window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
-        } else {
-          window.location.href = '/projects'
-        }
-        return
-      }
+    // Check for access_token in fragment
+    if (hash.includes('access_token')) {
+      setMode('processing')
+      const supabase = createClient()
 
-      // Fallback: listen for auth state change
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        (_event: string, newSession: { user: { user_metadata?: Record<string, string> } } | null) => {
-          if (newSession) {
-            subscription.unsubscribe()
-            const pid = newSession.user?.user_metadata?.invited_project_id
-            if (pid) {
-              window.location.href = `/auth/accept-invitation?project=${pid}`
+      // Give Supabase client time to detect and process the hash
+      setTimeout(async () => {
+        try {
+          // getSession should now have the session from the hash
+          const { data: sessionData } = await supabase.auth.getSession()
+          const session = (sessionData as Record<string, unknown>)?.session as { user: { user_metadata?: Record<string, string> } } | null
+
+          if (session) {
+            const invitedProjectId = session.user?.user_metadata?.invited_project_id
+            if (invitedProjectId) {
+              window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
             } else {
               window.location.href = '/projects'
             }
+            return
           }
+        } catch (e) {
+          console.error('Auth processing error:', e)
         }
-      )
 
-      // Timeout
-      setTimeout(() => setProcessing(false), 15000)
+        // Fallback: just redirect to projects (session may be set via cookie)
+        window.location.href = '/projects'
+      }, 1500)
+      return
     }
 
-    handleAuth()
-  }, [processing])
+    // No hash - show login form
+    setMode('login')
+  }, [])
 
-  if (processing) {
+  if (mode === 'loading' || mode === 'processing') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
         <Spinner size="lg" />
-        <p className="text-sm text-slate-600">認証を処理しています...</p>
+        <p className="text-sm text-slate-600">
+          {mode === 'processing' ? '認証を処理しています...' : '読み込み中...'}
+        </p>
       </div>
     )
   }
