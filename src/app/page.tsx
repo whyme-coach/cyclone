@@ -64,8 +64,23 @@ export default function LoginPage() {
       return
     }
 
-    // No hash - show login form
-    setMode('login')
+    // No hash - but check if session exists (Supabase may have auto-consumed the hash)
+    const supabase = createClient()
+    supabase.auth.getSession().then(({ data }: { data: Record<string, unknown> }) => {
+      const session = data?.session as { user: { user_metadata?: Record<string, string> } } | null
+      if (session) {
+        const invitedProjectId = session.user?.user_metadata?.invited_project_id
+        if (invitedProjectId) {
+          window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
+        } else {
+          window.location.href = '/projects'
+        }
+      } else {
+        setMode('login')
+      }
+    }).catch(() => {
+      setMode('login')
+    })
   }, [])
 
   if (mode === 'loading' || mode === 'processing') {
