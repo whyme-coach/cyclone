@@ -21,6 +21,7 @@ export async function POST(req: Request) {
         description: `${kpi.description}\n\n【算出方法】${kpi.calculation}`,
         target_unit: kpi.unit,
         frequency: kpi.frequency || 'monthly',
+        ...(kpi.previous_year_max != null ? { previous_year_max: kpi.previous_year_max } : {}),
       }).select('id').single()
 
       if (kpiData && kpi.measure_ids && Array.isArray(kpi.measure_ids)) {

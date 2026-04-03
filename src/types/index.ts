@@ -196,6 +196,7 @@ export interface KPI {
   target_value?: number
   target_unit?: string
   current_value?: number
+  previous_year_max?: number
   frequency: 'weekly' | 'monthly' | 'quarterly'
   created_by?: string
   created_at: string

@@ -43,6 +43,8 @@ export default function KPIsPage() {
   const { toast } = useToast()
   const supabase = useMemo(() => createClient(), [])
   const department = departments.find(d => d.id === deptId)
+  const projectId = project?.id || ''
+  const treeStorageKey = `cyclone-kpi-tree-${projectId}-${deptId}`
 
   useEffect(() => {
     if (!project) return
@@ -61,6 +63,29 @@ export default function KPIsPage() {
     }
     fetchAll()
   }, [project, deptId, supabase])
+
+  // Restore tree from localStorage on mount
+  useEffect(() => {
+    if (!projectId || !deptId) return
+    try {
+      const cached = localStorage.getItem(treeStorageKey)
+      if (cached) {
+        const parsed = JSON.parse(cached) as KPITree
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setTree(parsed)
+          setAnimStep(3) // Skip animation, show immediately
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  }, [projectId, deptId, treeStorageKey])
+
+  // Save tree to localStorage when it changes
+  useEffect(() => {
+    if (!projectId || !deptId) return
+    if (tree && tree.length > 0) {
+      localStorage.setItem(treeStorageKey, JSON.stringify(tree))
+    }
+  }, [tree, projectId, deptId, treeStorageKey])
 
   const handleGenerateTree = async () => {
     console.log('[KPI] Generate tree clicked. measures:', measures.length, 'goals:', goals.length)
@@ -132,6 +157,7 @@ export default function KPIsPage() {
       })
       if (!res.ok) throw new Error()
       toast('KPIツリーを保存しました', 'success')
+      localStorage.removeItem(treeStorageKey)
       // Refresh KPI list
       const { data } = await supabase.from('kpis').select('*').eq('project_id', project.id).eq('department_id', deptId).order('created_at')
       if (data) setKpis(data)
@@ -386,6 +412,7 @@ export default function KPIsPage() {
                   {kpi.description && <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-line line-clamp-3">{kpi.description}</p>}
                   <div className="flex gap-2 mt-1.5 flex-wrap">
                     {kpi.target_value != null && <Badge variant="info">目標: {kpi.target_value} {kpi.target_unit}</Badge>}
+                    {kpi.previous_year_max != null && <Badge variant="default">前年最大: {kpi.previous_year_max} {kpi.target_unit}</Badge>}
                     <Badge variant="default">{kpi.frequency === 'monthly' ? '月次' : kpi.frequency === 'weekly' ? '週次' : '四半期'}</Badge>
                   </div>
                 </div>
@@ -474,6 +501,7 @@ function KpiForm({ kpi, measures, onSave, onClose }: { kpi: KPI | null; measures
   const [form, setForm] = useState({
     name: kpi?.name || '', description: kpi?.description || '', measure_id: kpi?.measure_id || '',
     target_value: kpi?.target_value?.toString() || '', target_unit: kpi?.target_unit || '',
+    previous_year_max: kpi?.previous_year_max?.toString() || '',
     frequency: (kpi?.frequency || 'monthly') as string,
   })
   return (
@@ -481,14 +509,17 @@ function KpiForm({ kpi, measures, onSave, onClose }: { kpi: KPI | null; measures
       <Input label="KPI名" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
       <Textarea label="説明・算出方法" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} />
       <Select label="関連施策" value={form.measure_id} onChange={e => setForm({ ...form, measure_id: e.target.value })} options={measures.map(m => ({ value: m.id, label: m.title }))} placeholder="施策を選択..." />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Input label="目標値" type="number" value={form.target_value} onChange={e => setForm({ ...form, target_value: e.target.value })} />
+        <Input label="過年度実績（最大値）" type="number" value={form.previous_year_max} onChange={e => setForm({ ...form, previous_year_max: e.target.value })} placeholder="任意" />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
         <Input label="単位" value={form.target_unit} onChange={e => setForm({ ...form, target_unit: e.target.value })} placeholder="件、円、%" />
         <Select label="計測頻度" value={form.frequency} onChange={e => setForm({ ...form, frequency: e.target.value })} options={[{ value: 'weekly', label: '週次' }, { value: 'monthly', label: '月次' }, { value: 'quarterly', label: '四半期' }]} />
       </div>
       <div className="flex justify-end gap-3 pt-2">
         <Button variant="secondary" onClick={onClose}>キャンセル</Button>
-        <Button onClick={() => onSave({ ...form, frequency: form.frequency as 'weekly' | 'monthly' | 'quarterly', target_value: form.target_value ? parseFloat(form.target_value) : undefined, measure_id: form.measure_id || undefined })} disabled={!form.name}>保存</Button>
+        <Button onClick={() => onSave({ ...form, frequency: form.frequency as 'weekly' | 'monthly' | 'quarterly', target_value: form.target_value ? parseFloat(form.target_value) : undefined, previous_year_max: form.previous_year_max ? parseFloat(form.previous_year_max) : undefined, measure_id: form.measure_id || undefined })} disabled={!form.name}>保存</Button>
       </div>
     </div>
   )
