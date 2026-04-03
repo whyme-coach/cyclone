@@ -63,49 +63,31 @@ function AcceptInvitationContent() {
     }
 
     const acceptInvitation = async () => {
-      const { data: invitation } = await supabase
-        .from('invitations')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('email', user.email)
-        .eq('status', 'pending')
-        .single()
+      try {
+        const res = await fetch('/api/accept-invitation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId }),
+        })
+        const data = await res.json()
 
-      if (!invitation) {
-        const { data: member } = await supabase
-          .from('project_members')
-          .select('id')
-          .eq('project_id', projectId)
-          .eq('user_id', user.id)
-          .single()
-
-        if (member) {
-          setStatus('success')
-          setMessage('既にプロジェクトに参加しています')
+        if (!res.ok) {
+          setStatus('error')
+          setMessage(data.error || '参加に失敗しました')
           return
         }
+
+        if (data.message === 'already_member') {
+          setStatus('success')
+          setMessage('既にプロジェクトに参加しています')
+        } else {
+          setStatus('success')
+          setMessage('プロジェクトに参加しました')
+        }
+      } catch {
         setStatus('error')
-        setMessage('招待が見つかりません')
-        return
+        setMessage('参加処理でエラーが発生しました')
       }
-
-      const { error } = await supabase.from('project_members').insert({
-        project_id: projectId,
-        user_id: user.id,
-        role: invitation.role,
-        department_id: invitation.department_id,
-        invited_by: invitation.invited_by,
-      })
-
-      if (error) {
-        setStatus('error')
-        setMessage('参加に失敗しました')
-        return
-      }
-
-      await supabase.from('invitations').update({ status: 'accepted' }).eq('id', invitation.id)
-      setStatus('success')
-      setMessage('プロジェクトに参加しました')
     }
 
     acceptInvitation()
