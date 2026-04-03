@@ -37,7 +37,7 @@ export default function KPIsPage() {
   const [tree, setTree] = useState<KPITree | null>(null)
   const [animStep, setAnimStep] = useState(0) // 0=none, 1=KGI, 2=KSF, 3=KPI
   const [saving, setSaving] = useState(false)
-  const [expandedKpi, setExpandedKpi] = useState<string | null>(null) // "gi-si-ki" key
+  const [selectedTreeKpi, setSelectedTreeKpi] = useState<{ kpi: TreeKPI; ksfMeasureId: string | null } | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [editingKpi, setEditingKpi] = useState<KPI | null>(null)
   const { toast } = useToast()
@@ -256,8 +256,6 @@ export default function KPIsPage() {
                           {/* KPI Column */}
                           <div className="space-y-1.5">
                             {ksf.kpis.map((kpi, ki) => {
-                              const key = `${gi}-${si}-${ki}`
-                              const isExpanded = expandedKpi === key
                               const isRegistered = kpis.some(k => k.name === kpi.name)
                               return (
                                 <div key={ki} className={cn(
@@ -265,35 +263,18 @@ export default function KPIsPage() {
                                   animStep >= 3 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-8'
                                 )} style={{ transitionDelay: `${si * 200 + ki * 150 + 1000}ms` }}>
                                   <div
-                                    onClick={() => setExpandedKpi(isExpanded ? null : key)}
+                                    onClick={() => setSelectedTreeKpi({ kpi, ksfMeasureId: ksf.ksf_measure_id })}
                                     className={cn(
-                                      'rounded-xl shadow-sm cursor-pointer transition-all',
-                                      isExpanded ? 'w-80' : 'w-52',
+                                      'rounded-xl shadow-sm cursor-pointer transition-all w-52 hover:shadow-md',
                                       isRegistered
                                         ? 'bg-green-50 border border-green-300'
-                                        : 'bg-amber-50 border border-amber-200 hover:shadow-md'
+                                        : 'bg-amber-50 border border-amber-200'
                                     )}
                                   >
                                     <div className="p-2.5 flex items-center gap-1.5">
                                       <Badge variant={isRegistered ? 'success' : 'warning'}>{isRegistered ? '登録済' : 'KPI'}</Badge>
                                       <span className="text-xs font-semibold text-slate-800 truncate">{kpi.name}</span>
-                                      <svg className={cn('w-3 h-3 text-slate-400 shrink-0 transition-transform ml-auto', isExpanded && 'rotate-180')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                     </div>
-                                    {isExpanded && (
-                                      <div className="px-3 pb-3 border-t border-amber-100 pt-2 space-y-2" onClick={e => e.stopPropagation()}>
-                                        <p className="text-[11px] text-slate-600">{kpi.description}</p>
-                                        <div className="flex gap-1.5 flex-wrap">
-                                          <span className="text-[10px] bg-white border border-slate-200 rounded px-1.5 py-0.5 text-blue-600">参考: {kpi.target_example}</span>
-                                          <span className="text-[10px] bg-white border border-slate-200 rounded px-1.5 py-0.5 text-slate-500">{kpi.frequency === 'monthly' ? '月次' : kpi.frequency === 'weekly' ? '週次' : '四半期'}</span>
-                                        </div>
-                                        <p className="text-[10px] text-slate-400">算出: {kpi.calculation}</p>
-                                        {!isRegistered && (
-                                          <Button size="sm" className="w-full mt-1" onClick={() => handleRegisterKpi(kpi, ksf.ksf_measure_id)}>
-                                            このKPIを登録
-                                          </Button>
-                                        )}
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
                               )
@@ -348,6 +329,61 @@ export default function KPIsPage() {
         </div>
       </Card>
 
+      {/* KPI Detail Modal (from tree) */}
+      {selectedTreeKpi && (
+        <Modal open title="KPI詳細" onClose={() => setSelectedTreeKpi(null)} size="md">
+          {(() => {
+            const { kpi, ksfMeasureId } = selectedTreeKpi
+            const isRegistered = kpis.some(k => k.name === kpi.name)
+            return (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">{kpi.name}</h3>
+                  {isRegistered && <Badge variant="success" className="mt-1">登録済み</Badge>}
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 mb-1">説明</p>
+                    <p className="text-sm text-slate-700">{kpi.description}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <p className="text-xs text-slate-400">参考目標値</p>
+                      <p className="text-sm font-semibold text-blue-700 mt-0.5">{kpi.target_example}</p>
+                      <p className="text-[10px] text-slate-400">※参考値です</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <p className="text-xs text-slate-400">計測頻度</p>
+                      <p className="text-sm font-semibold text-slate-700 mt-0.5">
+                        {kpi.frequency === 'monthly' ? '月次' : kpi.frequency === 'weekly' ? '週次' : '四半期'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-400 mb-1">算出方法</p>
+                    <p className="text-sm text-slate-700">{kpi.calculation}</p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+                  <Button variant="secondary" onClick={() => setSelectedTreeKpi(null)}>閉じる</Button>
+                  {!isRegistered && (
+                    <Button onClick={async () => {
+                      await handleRegisterKpi(kpi, ksfMeasureId)
+                      setSelectedTreeKpi(null)
+                    }}>このKPIを登録</Button>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+        </Modal>
+      )}
+
+      {/* Manual KPI Edit/Add Modal */}
       {showModal && (
         <Modal open title={editingKpi ? 'KPIを編集' : 'KPIを追加'} onClose={() => { setShowModal(false); setEditingKpi(null) }}>
           <KpiForm kpi={editingKpi} measures={measures} onSave={handleSaveKpi} onClose={() => { setShowModal(false); setEditingKpi(null) }} />
