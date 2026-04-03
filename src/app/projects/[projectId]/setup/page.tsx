@@ -1214,7 +1214,7 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
         const res = await fetch('/api/invite', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, email: inv.email, role: inv.role, departmentId: deptId }),
+          body: JSON.stringify({ projectId, email: inv.email, role: inv.role, departmentId: deptId, fullName: inv.name, jobTitle: inv.position }),
         })
         if (!res.ok) throw new Error()
         setInvitees(prev => prev.map(i => i.email === inv.email ? { ...i, status: 'sent' } : i))

@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json()
-  const { projectId, email, role, departmentId } = body
+  const { projectId, email, role, departmentId, fullName, jobTitle } = body
 
   if (!projectId || !email || !role) {
     return NextResponse.json({ error: '必須項目が不足しています' }, { status: 400 })
@@ -57,6 +57,14 @@ export async function POST(req: Request) {
       invited_by: user.id,
     }, { onConflict: 'project_id,user_id' })
 
+    // Update profile with name/job_title if provided and not already set
+    const profileUpdates: Record<string, string> = {}
+    if (fullName) profileUpdates.full_name = fullName
+    if (jobTitle) profileUpdates.job_title = jobTitle
+    if (Object.keys(profileUpdates).length > 0) {
+      await admin.from('user_profiles').update(profileUpdates).eq('id', existingProfile.id)
+    }
+
     await admin.from('invitations').update({ status: 'accepted' })
       .eq('project_id', projectId).eq('email', email)
 
@@ -67,7 +75,12 @@ export async function POST(req: Request) {
   try {
     const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
-      data: { invited_project_id: projectId, invited_role: role },
+      data: {
+        invited_project_id: projectId,
+        invited_role: role,
+        full_name: fullName || '',
+        job_title: jobTitle || '',
+      },
     })
 
     if (inviteErr) {
