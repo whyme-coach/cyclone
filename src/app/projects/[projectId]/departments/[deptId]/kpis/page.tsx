@@ -215,9 +215,9 @@ export default function KPIsPage() {
           <div className="overflow-x-auto pb-4">
             <div style={{ minWidth: 1200, padding: '16px 0' }}>
               {tree.map((kgi, gi) => (
-                <div key={gi} style={{ display: 'flex', alignItems: 'stretch', marginBottom: gi < tree.length - 1 ? 48 : 0 }}>
+                <div key={gi} style={{ display: 'flex', alignItems: 'center', marginBottom: gi < tree.length - 1 ? 48 : 0 }}>
                   {/* KGI Node */}
-                  <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, opacity: animStep >= 1 ? 1 : 0, transform: animStep >= 1 ? 'translateX(0) scale(1)' : 'translateX(-20px) scale(0.95)', transition: 'all 0.7s ease-out' }}>
+                  <div style={{ flexShrink: 0, opacity: animStep >= 1 ? 1 : 0, transform: animStep >= 1 ? 'translateX(0) scale(1)' : 'translateX(-20px) scale(0.95)', transition: 'all 0.7s ease-out' }}>
                     <div style={{ width: 180, background: 'linear-gradient(135deg, #3b82f6 0%, #4f46e5 100%)', color: '#fff', borderRadius: 16, padding: '14px 16px', boxShadow: '0 8px 24px rgba(59,130,246,0.25)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <div style={{ width: 24, height: 24, borderRadius: 8, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -233,107 +233,112 @@ export default function KPIsPage() {
                     </div>
                   </div>
 
-                  {/* KGI→KSF Connector: horizontal line + vertical trunk */}
-                  <div style={{ flexShrink: 0, width: 48, position: 'relative', opacity: animStep >= 2 ? 1 : 0, transition: 'opacity 0.5s ease 0.3s' }}>
-                    {/* Center horizontal line from KGI to trunk */}
-                    <div style={{ position: 'absolute', left: 0, right: kgi.ksfs.length > 1 ? 0 : 0, top: '50%', height: 2, background: '#93c5fd', transform: 'translateY(-50%)' }} />
-                    {/* Vertical trunk line */}
-                    {kgi.ksfs.length > 1 && (
-                      <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 2, background: '#6ee7b7' }} />
-                    )}
-                    {/* Branch lines from trunk to each KSF */}
-                    {kgi.ksfs.map((_, si) => {
-                      const pct = kgi.ksfs.length === 1 ? 50 : (si / (kgi.ksfs.length - 1)) * 100
+                  {/* KGI→KSF horizontal line */}
+                  <div style={{ flexShrink: 0, width: 32, height: 2, background: '#93c5fd', opacity: animStep >= 2 ? 1 : 0, transition: 'opacity 0.5s ease 0.3s' }} />
+
+                  {/* KSF column with per-row branch lines */}
+                  <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 0 }}>
+                    {kgi.ksfs.map((ksf, si) => {
+                      const isFirst = si === 0
+                      const isLast = si === kgi.ksfs.length - 1
+                      const isOnly = kgi.ksfs.length === 1
                       return (
-                        <div key={si} style={{ position: 'absolute', right: 0, top: `${pct}%`, width: 0, height: 0 }}>
-                          {/* Small horizontal tick mark - rendered via KSF branch connector instead */}
+                        <div key={si} style={{ display: 'flex', alignItems: 'center' }}>
+                          {/* Vertical trunk segment + horizontal branch */}
+                          <div style={{ flexShrink: 0, width: 20, position: 'relative', alignSelf: 'stretch', opacity: animStep >= 2 ? 1 : 0, transition: `opacity 0.5s ease ${si * 0.15 + 0.4}s` }}>
+                            {/* Vertical line: top half (show if not first) */}
+                            {!isOnly && !isFirst && (
+                              <div style={{ position: 'absolute', left: 0, top: 0, bottom: '50%', width: 2, background: '#6ee7b7' }} />
+                            )}
+                            {/* Vertical line: bottom half (show if not last) */}
+                            {!isOnly && !isLast && (
+                              <div style={{ position: 'absolute', left: 0, top: '50%', bottom: 0, width: 2, background: '#6ee7b7' }} />
+                            )}
+                            {/* Horizontal branch from trunk to KSF */}
+                            <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 2, background: '#6ee7b7', transform: 'translateY(-50%)' }} />
+                          </div>
+
+                          {/* KSF Node */}
+                          <div style={{ flexShrink: 0, opacity: animStep >= 2 ? 1 : 0, transform: animStep >= 2 ? 'translateX(0) scale(1)' : 'translateX(-16px) scale(0.95)', transition: `all 0.7s ease-out ${si * 0.15 + 0.4}s`, margin: '6px 0' }}>
+                            <div style={{ width: 300, background: 'linear-gradient(135deg, #34d399 0%, #14b8a6 100%)', color: '#fff', borderRadius: 14, padding: '12px 16px', boxShadow: '0 4px 16px rgba(16,185,129,0.2)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                </div>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(167,243,208,0.9)', letterSpacing: '0.1em', textTransform: 'uppercase' as const }}>KSF</span>
+                              </div>
+                              <p style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.4, margin: 0 }}>{ksf.ksf_title}</p>
+                            </div>
+                          </div>
+
+                          {/* KSF→KPI horizontal line */}
+                          <div style={{ flexShrink: 0, width: 24, height: 2, background: '#a7f3d0', opacity: animStep >= 3 ? 1 : 0, transition: `opacity 0.5s ease ${si * 0.15 + 0.7}s` }} />
+
+                          {/* KPI column with per-row branch lines */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                            {ksf.kpis.map((kpi, ki) => {
+                              const isFirstKpi = ki === 0
+                              const isLastKpi = ki === ksf.kpis.length - 1
+                              const isOnlyKpi = ksf.kpis.length === 1
+                              const isRegistered = kpis.some(k => k.name === kpi.name)
+                              return (
+                                <div key={ki} style={{ display: 'flex', alignItems: 'center' }}>
+                                  {/* KPI vertical trunk segment + horizontal branch + dot */}
+                                  <div style={{ flexShrink: 0, width: 24, position: 'relative', alignSelf: 'stretch', opacity: animStep >= 3 ? 1 : 0, transition: `opacity 0.5s ease ${si * 0.15 + ki * 0.1 + 0.8}s` }}>
+                                    {!isOnlyKpi && !isFirstKpi && (
+                                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: '50%', width: 2, background: '#cbd5e1' }} />
+                                    )}
+                                    {!isOnlyKpi && !isLastKpi && (
+                                      <div style={{ position: 'absolute', left: 0, top: '50%', bottom: 0, width: 2, background: '#cbd5e1' }} />
+                                    )}
+                                    {/* Horizontal branch */}
+                                    <div style={{ position: 'absolute', left: 0, right: 8, top: '50%', height: 2, background: '#cbd5e1', transform: 'translateY(-50%)' }} />
+                                    {/* Dot */}
+                                    <div style={{ position: 'absolute', right: 0, top: '50%', width: 8, height: 8, borderRadius: '50%', background: isRegistered ? '#22c55e' : '#f59e0b', transform: 'translateY(-50%)' }} />
+                                  </div>
+
+                                  {/* KPI Card */}
+                                  <div
+                                    onClick={() => setSelectedTreeKpi({ kpi, ksfMeasureId: ksf.ksf_measure_id })}
+                                    style={{
+                                      width: 315,
+                                      borderRadius: 12,
+                                      padding: '10px 14px',
+                                      margin: '3px 0',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 10,
+                                      cursor: 'pointer',
+                                      border: isRegistered ? '1.5px solid #86efac' : '1.5px solid #e2e8f0',
+                                      background: isRegistered ? 'linear-gradient(90deg, #f0fdf4, #ecfdf5)' : '#fff',
+                                      boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                                      opacity: animStep >= 3 ? 1 : 0,
+                                      transform: animStep >= 3 ? 'translateX(0) scale(1)' : 'translateX(-16px) scale(0.95)',
+                                      transition: `all 0.7s ease-out ${si * 0.15 + ki * 0.1 + 0.8}s`,
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                                    onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'translateY(0)' }}
+                                  >
+                                    <div style={{
+                                      width: 22, height: 22, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      background: isRegistered ? '#22c55e' : '#f1f5f9',
+                                    }}>
+                                      {isRegistered ? (
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                                      ) : (
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6-10V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0h6m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14" /></svg>
+                                      )}
+                                    </div>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: isRegistered ? '#166534' : '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1 }}>{kpi.name}</span>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
                       )
                     })}
-                  </div>
-
-                  {/* KSF + KPI groups */}
-                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', flex: 1, gap: 12 }}>
-                    {kgi.ksfs.map((ksf, si) => (
-                      <div key={si} style={{ display: 'flex', alignItems: 'center' }}>
-                        {/* KSF horizontal branch from trunk */}
-                        <div style={{ flexShrink: 0, width: 20, height: 2, background: '#6ee7b7', opacity: animStep >= 2 ? 1 : 0, transition: `opacity 0.5s ease ${si * 0.15 + 0.4}s` }} />
-
-                        {/* KSF Node - 1.5x width */}
-                        <div style={{ flexShrink: 0, opacity: animStep >= 2 ? 1 : 0, transform: animStep >= 2 ? 'translateX(0) scale(1)' : 'translateX(-16px) scale(0.95)', transition: `all 0.7s ease-out ${si * 0.15 + 0.4}s` }}>
-                          <div style={{ width: 300, background: 'linear-gradient(135deg, #34d399 0%, #14b8a6 100%)', color: '#fff', borderRadius: 14, padding: '12px 16px', boxShadow: '0 4px 16px rgba(16,185,129,0.2)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                              <div style={{ width: 20, height: 20, borderRadius: 6, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                              </div>
-                              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(167,243,208,0.9)', letterSpacing: '0.1em', textTransform: 'uppercase' as const }}>KSF</span>
-                            </div>
-                            <p style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.4, margin: 0 }}>{ksf.ksf_title}</p>
-                          </div>
-                        </div>
-
-                        {/* KSF→KPI Connector: horizontal + vertical trunk */}
-                        <div style={{ flexShrink: 0, width: 40, position: 'relative', alignSelf: 'stretch', opacity: animStep >= 3 ? 1 : 0, transition: `opacity 0.5s ease ${si * 0.15 + 0.7}s` }}>
-                          {/* Horizontal line from KSF */}
-                          <div style={{ position: 'absolute', left: 0, right: ksf.kpis.length > 1 ? 0 : 0, top: '50%', height: 2, background: '#a7f3d0', transform: 'translateY(-50%)' }} />
-                          {/* Vertical trunk for KPIs */}
-                          {ksf.kpis.length > 1 && (
-                            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 2, background: '#cbd5e1' }} />
-                          )}
-                        </div>
-
-                        {/* KPI Nodes - 1.5x width */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {ksf.kpis.map((kpi, ki) => {
-                            const isRegistered = kpis.some(k => k.name === kpi.name)
-                            return (
-                              <div key={ki} style={{ display: 'flex', alignItems: 'center' }}>
-                                {/* KPI horizontal branch + dot */}
-                                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', width: 20, opacity: animStep >= 3 ? 1 : 0, transition: `opacity 0.5s ease ${si * 0.15 + ki * 0.1 + 0.8}s` }}>
-                                  <div style={{ flex: 1, height: 2, background: '#cbd5e1' }} />
-                                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: isRegistered ? '#22c55e' : '#f59e0b', flexShrink: 0 }} />
-                                </div>
-
-                                {/* KPI Card */}
-                                <div
-                                  onClick={() => setSelectedTreeKpi({ kpi, ksfMeasureId: ksf.ksf_measure_id })}
-                                  style={{
-                                    width: 315,
-                                    borderRadius: 12,
-                                    padding: '10px 14px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 10,
-                                    cursor: 'pointer',
-                                    border: isRegistered ? '1.5px solid #86efac' : '1.5px solid #e2e8f0',
-                                    background: isRegistered ? 'linear-gradient(90deg, #f0fdf4, #ecfdf5)' : '#fff',
-                                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-                                    opacity: animStep >= 3 ? 1 : 0,
-                                    transform: animStep >= 3 ? 'translateX(0) scale(1)' : 'translateX(-16px) scale(0.95)',
-                                    transition: `all 0.7s ease-out ${si * 0.15 + ki * 0.1 + 0.8}s`,
-                                  }}
-                                  onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
-                                  onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'translateY(0)' }}
-                                >
-                                  <div style={{
-                                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    background: isRegistered ? '#22c55e' : '#f1f5f9',
-                                  }}>
-                                    {isRegistered ? (
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-                                    ) : (
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6-10V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0h6m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14" /></svg>
-                                    )}
-                                  </div>
-                                  <span style={{ fontSize: 12, fontWeight: 600, color: isRegistered ? '#166534' : '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1 }}>{kpi.name}</span>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 </div>
               ))}
