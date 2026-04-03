@@ -334,64 +334,22 @@ export default function ActionPlansPage() {
   const handleSaveActionPlan = async () => {
     if (!project || !selectedKpi || draftItems.length === 0) return
     try {
-      if (existingPlanForKpi) {
-        // Update existing: delete old items, insert new
-        await supabase
-          .from('action_items')
-          .delete()
-          .eq('action_plan_id', existingPlanForKpi.id)
-        for (let i = 0; i < draftItems.length; i++) {
-          const item = draftItems[i]
-          await supabase.from('action_items').insert({
-            action_plan_id: existingPlanForKpi.id,
-            title: item.title,
-            description: item.description,
-            deliverable: item.deliverable,
-            start_date: item.start_date,
-            end_date: item.end_date,
-            sort_order: i,
-            status: 'not_started',
-            progress_percent: 0,
-          })
-        }
-        toast('アクションプランを更新しました', 'success')
-      } else {
-        // Create new plan
-        const { data: planData } = await supabase
-          .from('action_plans')
-          .insert({
-            project_id: project.id,
-            department_id: deptId,
-            kpi_id: selectedKpi.id,
-            title: selectedKpi.name,
-            fiscal_year: project.fiscal_year,
-            status: 'active',
-            created_by: member?.user_id || null,
-          })
-          .select()
-          .single()
+      const res = await fetch('/api/save-action-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          departmentId: deptId,
+          kpiId: selectedKpi.id,
+          title: selectedKpi.name,
+          fiscalYear: project.fiscal_year,
+          items: draftItems,
+          existingPlanId: existingPlanForKpi?.id || null,
+        }),
+      })
+      if (!res.ok) throw new Error('Save failed')
 
-        if (!planData) {
-          toast('プランの作成に失敗しました', 'error')
-          return
-        }
-
-        for (let i = 0; i < draftItems.length; i++) {
-          const item = draftItems[i]
-          await supabase.from('action_items').insert({
-            action_plan_id: planData.id,
-            title: item.title,
-            description: item.description,
-            deliverable: item.deliverable,
-            start_date: item.start_date,
-            end_date: item.end_date,
-            sort_order: i,
-            status: 'not_started',
-            progress_percent: 0,
-          })
-        }
-        toast('アクションプランを保存しました', 'success')
-      }
+      toast(existingPlanForKpi ? 'アクションプランを更新しました' : 'アクションプランを保存しました', 'success')
 
       // Save conversation log if we came from coaching
       await saveConversationLog()
@@ -921,6 +879,15 @@ function Step2CoachChat({
 
 // ========== Step 3: Action Item Editing ==========
 
+function toWeekLabel(dateStr: string): string {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const week = Math.ceil(day / 7)
+  return `${m}月${week}週`
+}
+
 function Step3EditItems({
   kpi,
   items,
@@ -941,6 +908,7 @@ function Step3EditItems({
   onBack: () => void
 }) {
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const handleSave = async () => {
     setSaving(true)
@@ -962,60 +930,114 @@ function Step3EditItems({
         </div>
       </Card>
 
-      <div className="space-y-4">
-        {items.map((item, index) => (
-          <Card key={item.id}>
-            <div className="flex items-start justify-between mb-3">
-              <span className="text-xs font-medium text-slate-500">アクション {index + 1}</span>
-              <button
-                onClick={() => onRemoveItem(item.id)}
-                className="text-slate-400 hover:text-red-500 p-1"
-                title="削除"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-            <div className="space-y-3">
-              <Input
-                label="タイトル"
-                value={item.title}
-                onChange={e => onUpdateItem(item.id, { title: e.target.value })}
-                required
-              />
-              <Textarea
-                label="説明"
-                value={item.description}
-                onChange={e => onUpdateItem(item.id, { description: e.target.value })}
-                rows={2}
-              />
-              <Input
-                label="成果物"
-                value={item.deliverable}
-                onChange={e => onUpdateItem(item.id, { deliverable: e.target.value })}
-                placeholder="例: 調査報告書、提案資料"
-              />
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="開始日"
-                  type="date"
-                  value={item.start_date}
-                  onChange={e => onUpdateItem(item.id, { start_date: e.target.value })}
-                  required
-                />
-                <Input
-                  label="完了日"
-                  type="date"
-                  value={item.end_date}
-                  onChange={e => onUpdateItem(item.id, { end_date: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+      <Card padding={false}>
+        <div className="overflow-x-auto">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', width: 36 }}>#</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 200 }}>アクション</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 160 }}>成果物</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 100 }}>開始週</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 100 }}>完了週</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 48 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => (
+                <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s', cursor: 'pointer' }}
+                  onClick={() => setEditingId(editingId === item.id ? null : item.id)}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                >
+                  <td style={{ padding: '10px 12px', color: '#94a3b8', fontWeight: 600, verticalAlign: 'top' }}>{index + 1}</td>
+                  <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
+                    {editingId === item.id ? (
+                      <div className="space-y-2" onClick={e => e.stopPropagation()}>
+                        <input
+                          style={{ width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
+                          value={item.title}
+                          onChange={e => onUpdateItem(item.id, { title: e.target.value })}
+                          placeholder="アクション名"
+                        />
+                        <textarea
+                          style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none', resize: 'vertical' }}
+                          rows={2}
+                          value={item.description}
+                          onChange={e => onUpdateItem(item.id, { description: e.target.value })}
+                          placeholder="説明（if-thenプラン含む）"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <p style={{ fontWeight: 600, color: '#1e293b', margin: 0 }}>{item.title || '（未入力）'}</p>
+                        {item.description && (
+                          <p style={{ fontSize: 11, color: '#94a3b8', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, maxWidth: 300 }}>{item.description}</p>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
+                    {editingId === item.id ? (
+                      <input
+                        style={{ width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
+                        value={item.deliverable}
+                        onChange={e => onUpdateItem(item.id, { deliverable: e.target.value })}
+                        placeholder="成果物"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span style={{ color: '#64748b' }}>{item.deliverable || '—'}</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'center', verticalAlign: 'top' }}>
+                    {editingId === item.id ? (
+                      <input
+                        type="date"
+                        style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
+                        value={item.start_date}
+                        onChange={e => onUpdateItem(item.id, { start_date: e.target.value })}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 12, color: '#475569' }}>{toWeekLabel(item.start_date)}</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'center', verticalAlign: 'top' }}>
+                    {editingId === item.id ? (
+                      <input
+                        type="date"
+                        style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
+                        value={item.end_date}
+                        onChange={e => onUpdateItem(item.id, { end_date: e.target.value })}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 12, color: '#475569' }}>{toWeekLabel(item.end_date)}</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); onRemoveItem(item.id) }}
+                      style={{ color: '#cbd5e1', cursor: 'pointer', padding: 4, border: 'none', background: 'none', transition: 'color 0.15s' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#cbd5e1' }}
+                      title="削除"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {items.length === 0 && (
+          <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+            アクションアイテムがありません
+          </div>
+        )}
+      </Card>
 
       <div className="flex items-center justify-between">
         <Button variant="secondary" onClick={onAddItem}>
