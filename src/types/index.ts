@@ -76,6 +76,8 @@ export interface UserProfile {
   full_name?: string
   email: string
   avatar_url?: string
+  job_title?: string
+  phone?: string
   created_at: string
   updated_at: string
 }
