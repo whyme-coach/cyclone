@@ -172,15 +172,33 @@ export default function ActionPlansPage() {
       setAiLoading(true)
       try {
         const fiscalYear = project?.fiscal_year || new Date().getFullYear()
-        const userPrompt = COACH_ACTION_PLAN_USER_PROMPT(
-          selectedKpi.name,
-          selectedKpi.description || '',
-          String(selectedKpi.target_value || ''),
-          selectedKpi.target_unit || '',
-          String(selectedKpi.previous_year_max || ''),
-          department?.name || '',
+
+        // Fetch context data: goals, strategies, measures for this department
+        const [goalsRes, stratRes, measRes] = await Promise.all([
+          supabase.from('management_goals').select('title, target_value, target_unit, type').eq('project_id', project!.id).order('sort_order'),
+          supabase.from('strategies').select('title').eq('project_id', project!.id).order('sort_order'),
+          supabase.from('measures').select('title, description').eq('project_id', project!.id).eq('department_id', deptId).order('sort_order'),
+        ])
+        const goalsStr = goalsRes.data?.map((g: { title: string; target_value?: string; target_unit?: string; type: string }) => `${g.title}${g.target_value ? `（${g.target_value}${g.target_unit || ''}）` : ''} [${g.type}]`).join('\n') || ''
+        const stratStr = stratRes.data?.map((s: { title: string }) => s.title).join('\n') || ''
+        const measStr = measRes.data?.map((m: { title: string; description?: string }) => `${m.title}${m.description ? `: ${m.description}` : ''}`).join('\n') || ''
+
+        const comp = company as { name?: string; industry?: string; business_description?: string } | null
+        const userPrompt = COACH_ACTION_PLAN_USER_PROMPT({
+          kpiName: selectedKpi.name,
+          kpiDescription: selectedKpi.description || '',
+          kpiTarget: String(selectedKpi.target_value || ''),
+          kpiUnit: selectedKpi.target_unit || '',
+          kpiPreviousMax: String(selectedKpi.previous_year_max || ''),
+          departmentName: department?.name || '',
           fiscalYear,
-        )
+          companyName: comp?.name || '',
+          industry: comp?.industry || '',
+          businessDescription: comp?.business_description || '',
+          goals: goalsStr,
+          strategies: stratStr,
+          measures: measStr,
+        })
         const initialUserMsg: ChatMessage = {
           role: 'user',
           content: userPrompt,

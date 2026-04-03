@@ -149,21 +149,47 @@ JSONを返す際も装飾記号は不要。JSONブロックだけを返す。
 JSONを返すのは、WOOPの4ステップの対話が十分に進んでからにする。早すぎる段階ではJSONを返さない。
 `
 
-export const COACH_ACTION_PLAN_USER_PROMPT = (
-  kpiName: string,
-  kpiDescription: string,
-  kpiTarget: string,
-  kpiUnit: string,
-  kpiPreviousMax: string,
-  departmentName: string,
-  fiscalYear: number,
-) => `以下のKPIについて、達成するためのアクションプランを一緒に考えたいです。
+export const COACH_ACTION_PLAN_USER_PROMPT = (params: {
+  kpiName: string
+  kpiDescription: string
+  kpiTarget: string
+  kpiUnit: string
+  kpiPreviousMax: string
+  departmentName: string
+  fiscalYear: number
+  companyName: string
+  industry: string
+  businessDescription: string
+  goals: string
+  strategies: string
+  measures: string
+}) => {
+  const p = params
+  return `以下のKPIについて、達成するためのアクションプランを一緒に考えたいです。
 
-対象部門: ${departmentName}
-年度: ${fiscalYear}年度
-KPI名: ${kpiName}
-KPIの説明: ${kpiDescription}
-目標値: ${kpiTarget} ${kpiUnit}
-${kpiPreviousMax ? `過年度実績（最大値）: ${kpiPreviousMax} ${kpiUnit}` : ''}
+【会社情報】
+会社名: ${p.companyName}
+業種: ${p.industry || '（未設定）'}
+事業内容: ${p.businessDescription || '（未設定）'}
 
+【事業計画の文脈】
+経営目標:
+${p.goals || '（未設定）'}
+
+戦略:
+${p.strategies || '（未設定）'}
+
+当部門の施策:
+${p.measures || '（未設定）'}
+
+【対象KPI】
+対象部門: ${p.departmentName}
+年度: ${p.fiscalYear}年度
+KPI名: ${p.kpiName}
+KPIの説明: ${p.kpiDescription}
+目標値: ${p.kpiTarget} ${p.kpiUnit}
+${p.kpiPreviousMax ? `過年度実績（最大値）: ${p.kpiPreviousMax} ${p.kpiUnit}` : ''}
+
+上記の会社情報・事業計画の文脈を踏まえた上で、このKPIのアクションプランを一緒に考えてください。
 よろしくお願いします。`
+}
