@@ -158,6 +158,9 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
             {/* Department list removed from sidebar - accessible via dashboard */}
           </nav>
+
+          {/* User section at bottom */}
+          <SidebarUserSection />
         </aside>
 
         {/* Main */}
@@ -204,5 +207,68 @@ function ProjectHeader({ project, userId, sidebarOpen, onToggleSidebar }: {
         )}
       </button>
     </header>
+  )
+}
+
+function SidebarUserSection() {
+  const { user, profile, signOut } = useAuth()
+  const router = useRouter()
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  if (!user) return null
+
+  const displayName = profile?.full_name || user.email?.split('@')[0] || ''
+  const email = user.email || ''
+  const initials = displayName ? displayName.slice(0, 2) : email.slice(0, 2)
+
+  return (
+    <div className="border-t border-slate-200 p-2 relative">
+      <button
+        onClick={() => setMenuOpen(!menuOpen)}
+        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors text-left"
+      >
+        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+          {initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
+          <p className="text-[11px] text-slate-400 truncate">{email}</p>
+        </div>
+        <svg className={cn('w-4 h-4 text-slate-400 shrink-0 transition-transform', menuOpen && 'rotate-180')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+        </svg>
+      </button>
+
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+          <div className="absolute bottom-full left-2 right-2 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1">
+            <button
+              onClick={() => { setMenuOpen(false); router.push('/settings') }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              プロフィール設定
+            </button>
+            <div className="border-t border-slate-100 my-1" />
+            <button
+              onClick={async () => {
+                setMenuOpen(false)
+                await signOut()
+                router.push('/')
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              ログアウト
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
