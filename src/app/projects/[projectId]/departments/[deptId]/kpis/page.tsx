@@ -62,6 +62,7 @@ export default function KPIsPage() {
   }, [project, deptId, supabase])
 
   const handleGenerateTree = async () => {
+    console.log('[KPI] Generate tree clicked. measures:', measures.length, 'goals:', goals.length)
     setGenerating(true)
     setTree(null)
     setAnimStep(0)
@@ -82,7 +83,9 @@ export default function KPIsPage() {
           measStr,
         ) }],
       })
+      console.log('[KPI] AI response received:', JSON.stringify(data).substring(0, 200))
       const result = parseAIJsonResponse(data) as { tree?: KPITree }
+      console.log('[KPI] Parsed result:', result ? 'tree=' + (result.tree?.length || 0) + ' items' : 'null')
       if (result?.tree) {
         // Attach measure_ids to KPIs
         const enriched = result.tree.map(kgi => ({
@@ -101,7 +104,8 @@ export default function KPIsPage() {
         setTimeout(() => setAnimStep(2), 800)
         setTimeout(() => setAnimStep(3), 1600)
       }
-    } catch {
+    } catch (err) {
+      console.error('[KPI] Error:', err)
       toast('KPIツリーの生成に失敗しました', 'error')
     } finally {
       setGenerating(false)
