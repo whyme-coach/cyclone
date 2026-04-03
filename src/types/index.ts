@@ -216,6 +216,7 @@ export interface ActionPlan {
   id: string
   project_id: string
   measure_id?: string
+  kpi_id?: string
   department_id?: string
   title: string
   fiscal_year: number
