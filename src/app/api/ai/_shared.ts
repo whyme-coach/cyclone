@@ -141,6 +141,7 @@ export async function handleAIRoute(req: Request, options: ClaudeRequestOptions)
         model,
         max_tokens: maxTokens,
         temperature: 0,
+        top_p: 0.1,
         messages: body.messages,
         ...(sanitizedTools ? { tools: sanitizedTools } : {}),
         ...(sanitizedSystem ? { system: sanitizedSystem } : {}),
