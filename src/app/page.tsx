@@ -9,64 +9,75 @@ import { Spinner } from '@/components/ui/Spinner'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
+// Check hash synchronously before first render
+function getInitialState(): { processing: boolean; authError: string | null } {
+  if (typeof window === 'undefined') return { processing: false, authError: null }
+  const hash = window.location.hash
+  if (hash.includes('error=')) {
+    const params = new URLSearchParams(hash.replace('#', ''))
+    const errorCode = params.get('error_code') || ''
+    const errorDesc = params.get('error_description') || ''
+    const msg = (errorCode === 'otp_expired' || errorDesc.includes('expired'))
+      ? '招待リンクの有効期限が切れています。管理者に再招待を依頼してください。'
+      : `認証エラー: ${errorDesc.replace(/\+/g, ' ')}`
+    window.history.replaceState(null, '', '/')
+    return { processing: false, authError: msg }
+  }
+  if (hash.includes('access_token')) {
+    return { processing: true, authError: null }
+  }
+  return { processing: false, authError: null }
+}
+
 export default function LoginPage() {
-  const [processing, setProcessing] = useState(false)
-  const [authError, setAuthError] = useState<string | null>(null)
+  const initial = getInitialState()
+  const [processing, setProcessing] = useState(initial.processing)
+  const [authError] = useState(initial.authError)
   const router = useRouter()
 
-  // Handle Supabase Auth redirect with access_token or error in URL fragment
   useEffect(() => {
-    const hash = window.location.hash
-    if (hash && hash.includes('error=')) {
-      // Parse error from fragment
-      const params = new URLSearchParams(hash.replace('#', ''))
-      const errorCode = params.get('error_code') || ''
-      const errorDesc = params.get('error_description') || ''
-      if (errorCode === 'otp_expired' || errorDesc.includes('expired')) {
-        setAuthError('招待リンクの有効期限が切れています。管理者に再招待を依頼してください。')
-      } else {
-        setAuthError(`認証エラー: ${errorDesc.replace(/\+/g, ' ')}`)
-      }
-      // Clean up the URL
-      window.history.replaceState(null, '', '/')
-      return
-    }
-    if (hash && hash.includes('access_token')) {
-      setProcessing(true)
-      const supabase = createClient()
+    if (!processing) return
+    const supabase = createClient()
 
-      // Supabase client auto-detects the hash and sets the session
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      supabase.auth.getSession().then(({ data }: any) => {
-        const session = data?.session
-        if (session) {
-          // Check if this is from an invitation
-          const invitedProjectId = session.user?.user_metadata?.invited_project_id
-          if (invitedProjectId) {
-            window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
-          } else {
-            window.location.href = '/projects'
-          }
+    // Supabase client detects hash fragment and sets session
+    const handleAuth = async () => {
+      // Wait a moment for Supabase to process the hash
+      await new Promise(r => setTimeout(r, 500))
+
+      const { data } = await supabase.auth.getSession() as { data: { session: { user: { user_metadata?: Record<string, string> } } } | null }
+      const session = (data as { session?: { user: { user_metadata?: Record<string, string> } } })?.session
+
+      if (session) {
+        const invitedProjectId = session.user?.user_metadata?.invited_project_id
+        if (invitedProjectId) {
+          window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
         } else {
-          // Session not set yet, wait for onAuthStateChange
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
-            if (event === 'SIGNED_IN' && session) {
-              subscription.unsubscribe()
-              const invitedProjectId = session.user?.user_metadata?.invited_project_id
-              if (invitedProjectId) {
-                window.location.href = `/auth/accept-invitation?project=${invitedProjectId}`
-              } else {
-                window.location.href = '/projects'
-              }
-            }
-          })
-          // Timeout fallback
-          setTimeout(() => { setProcessing(false) }, 10000)
+          window.location.href = '/projects'
         }
-      })
+        return
+      }
+
+      // Fallback: listen for auth state change
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        (_event: string, newSession: { user: { user_metadata?: Record<string, string> } } | null) => {
+          if (newSession) {
+            subscription.unsubscribe()
+            const pid = newSession.user?.user_metadata?.invited_project_id
+            if (pid) {
+              window.location.href = `/auth/accept-invitation?project=${pid}`
+            } else {
+              window.location.href = '/projects'
+            }
+          }
+        }
+      )
+
+      // Timeout
+      setTimeout(() => setProcessing(false), 15000)
     }
-  }, [router])
+
+    handleAuth()
+  }, [processing])
 
   if (processing) {
     return (
