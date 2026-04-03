@@ -745,43 +745,126 @@ function WoopIndicator({ currentPhase }: { currentPhase: number }) {
   )
 }
 
+// Wish suggestions: keyed by sub-topic within the phase
+const WISH_SUGGESTIONS: Record<string, string[]> = {
+  meaning: [
+    'この目標を達成できれば、部門として一人前になれると思います',
+    '会社全体の成長戦略の中核を担える存在になりたいです',
+    '自分たちの仕事の価値を数字で証明できるようになりたいです',
+    'チームの士気が上がり、次の挑戦にも自信が持てるようになると思います',
+  ],
+  focus: [
+    'はい、まさにそれが一番実現したいことです',
+    '一番強く思うのは、チームが自力で成果を出せるようになることです',
+    '最も大事なのは、安定的に目標をクリアし続ける体制づくりです',
+    'お客様に対する価値提供の質を高めることが最優先です',
+  ],
+  confirm: [
+    'はい、その表現でしっくりきます',
+    'そうですね、もう少し言うと「持続的に」という意味も込めたいです',
+    'その通りです、それが私のWishです',
+    '概ねそうですが、少し補足させてください',
+  ],
+}
+
+const OUTCOME_SUGGESTIONS: Record<string, string[]> = {
+  visualize: [
+    '毎月の実績が目標を安定的に超えている状態をイメージしています',
+    'チームメンバーがそれぞれ自分の担当領域で成果を報告し合っている姿です',
+    '関連部署から「頼りになる」と言われて、連携がスムーズに進んでいる状態です',
+    '経営会議で自信を持って「計画通り進捗しています」と報告している場面です',
+  ],
+  sensory: [
+    'メンバーが前向きな表情で自分から改善提案を出しているイメージです',
+    'お客様から「品質が安定してきましたね」と評価をいただいている場面です',
+    '週次のミーティングで数字を見ながら活発に議論している雰囲気です',
+    '自分自身は安心感があり「このチームなら大丈夫」と感じています',
+  ],
+  confirm: [
+    'はい、その成功イメージを想像すると強く実現したいと思います',
+    'そうですね、まさにその状態が理想です',
+    'その通りです。想像するだけでワクワクします',
+    '実現したい気持ちはかなり強いです',
+  ],
+}
+
+const OBSTACLE_SUGGESTIONS: Record<string, string[]> = {
+  internal: [
+    '正直、自分が細部まで管理しようとしてしまい、任せきれないことが課題です',
+    '日常業務に追われて、改善活動の時間を確保できないことが多いです',
+    '新しいやり方に挑戦することへの不安が、行動を遅らせていると思います',
+    '優先順位の判断が曖昧で、やることが分散してしまう傾向があります',
+  ],
+  external: [
+    '人員が不足していて、担当者に負荷が集中してしまっています',
+    '他部門との調整に時間がかかり、スピード感が出せないことがあります',
+    '必要なツールや設備の整備が追いついていない状況です',
+    '市場環境の変化が早く、計画が途中で見直しになるリスクがあります',
+  ],
+  priority: [
+    '一番対策すべきは、自分自身が手放せない問題だと思います',
+    '最も影響が大きいのは人員・リソースの不足だと感じています',
+    '優先すべきは、チーム内のスキルのばらつきへの対応です',
+    '最優先は、日常業務との時間配分の問題だと思います',
+  ],
+}
+
+const PLAN_SUGGESTIONS: Record<string, string[]> = {
+  trigger: [
+    'その障害に気づくのは、週次の進捗確認で数字が止まっているときです',
+    '自分がメンバーの仕事に口を出そうとしている瞬間に気づきます',
+    'カレンダーを見て、改善活動の時間が入っていないときに気づきます',
+    '月末に振り返ったとき、予定していたタスクが手つかずの場合です',
+  ],
+  action: [
+    'その場ですぐに30分の作業時間をカレンダーにブロックします',
+    'まずメンバーに「どう進めるか」を聞いて、任せる形にします',
+    '5分だけでも着手して、翌日に続きをやる形で始めます',
+    '上司に状況を共有して、優先順位の判断を仰ぎます',
+  ],
+  confirm: [
+    'はい、そのif-thenプランならできそうです',
+    'しっくりきます。自信は7〜8くらいです',
+    'まずはこれで試してみて、うまくいかなければ調整したいです',
+    'プランBも含めて、段階的に進めていけそうです',
+  ],
+  planb: [
+    'うまくいかなかった場合は、まず上司に相談して方針を再確認します',
+    '代替案としては、外部の力を借りることも検討したいです',
+    '最初のプランが機能しなければ、範囲を縮小して再トライします',
+    '信頼できるメンバーにサポートを依頼する形にします',
+  ],
+}
+
 function generateSuggestions(messages: ChatMessage[], woopPhase: number, kpi: KPI): string[] {
+  // Determine sub-topic based on AI's latest question content
   const lastAi = [...messages].reverse().find(m => m.role === 'assistant')?.content || ''
+  const lower = lastAi.toLowerCase()
+  const userMsgCount = messages.filter(m => m.role === 'user').length - 1 // exclude initial prompt
 
   if (woopPhase === 0) {
-    // Wish: 願望フェーズ
-    return [
-      `${kpi.name}が達成できれば、部門の評価が大きく上がると思います`,
-      '会社全体の売上目標にも直結する重要な指標だと考えています',
-      '正直、まだ達成のイメージが湧いていないので一緒に考えたいです',
-      '昨年は未達だったので、今年こそ達成して自信をつけたいです',
-    ]
+    // Wish phase: detect sub-step
+    if (lower.includes('しっくり') || lower.includes('確認')) return WISH_SUGGESTIONS.confirm
+    if (lower.includes('1つ') || lower.includes('最も強く') || lower.includes('絞')) return WISH_SUGGESTIONS.focus
+    return WISH_SUGGESTIONS.meaning
   }
   if (woopPhase === 1) {
-    // Outcome: 成果イメージ
-    return [
-      '毎月の数字が安定して目標を上回っている状態が理想です',
-      'チーム全員が進捗を把握して、自主的に改善できている状態です',
-      '顧客から「対応が早くなった」と言われるようになりたいです',
-      '経営会議で胸を張って報告できるくらいの成果を出したいです',
-    ]
+    // Outcome phase
+    if (lower.includes('しっくり') || lower.includes('強まり') || lower.includes('確認') || lower.includes('気持ち')) return OUTCOME_SUGGESTIONS.confirm
+    if (lower.includes('表情') || lower.includes('会話') || lower.includes('聞こえ') || lower.includes('感じ') || lower.includes('気持ち') || lower.includes('反応')) return OUTCOME_SUGGESTIONS.sensory
+    return OUTCOME_SUGGESTIONS.visualize
   }
   if (woopPhase === 2) {
-    // Obstacle: 障害
-    return [
-      '人手不足で、通常業務に追われて改善活動の時間が取れません',
-      '部門間の連携がうまくいかず、情報共有が滞ることがあります',
-      'メンバーのスキルにバラつきがあり、特定の人に負荷が集中しています',
-      '過去に似た取り組みをしたが定着せず、形骸化してしまいました',
-    ]
+    // Obstacle phase
+    if (lower.includes('最優先') || lower.includes('最も') || lower.includes('どれ') || lower.includes('優先')) return OBSTACLE_SUGGESTIONS.priority
+    if (lower.includes('外部') || lower.includes('環境') || lower.includes('リソース') || lower.includes('人・金・時間')) return OBSTACLE_SUGGESTIONS.external
+    return OBSTACLE_SUGGESTIONS.internal
   }
-  // Plan: 対策計画
-  return [
-    'まずは現状の数字を正確に把握するところから始めたいです',
-    '週1回のミーティングで進捗を確認する仕組みを作りたいです',
-    '小さく始めて成果が出たら横展開するアプローチが良いと思います',
-    '外部の知見も取り入れながら、3ヶ月で形にしたいです',
-  ]
+  // Plan phase
+  if (lower.includes('プランb') || lower.includes('うまく機能しな') || lower.includes('代替') || lower.includes('次に試す')) return PLAN_SUGGESTIONS.planb
+  if (lower.includes('しっくり') || lower.includes('自信') || lower.includes('10段階') || lower.includes('まとめ')) return PLAN_SUGGESTIONS.confirm
+  if (lower.includes('行動') || lower.includes('着手') || lower.includes('最初にとる') || lower.includes('気づいたら')) return PLAN_SUGGESTIONS.action
+  return PLAN_SUGGESTIONS.trigger
 }
 
 function Step2CoachChat({
