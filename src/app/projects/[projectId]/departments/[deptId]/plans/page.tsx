@@ -663,33 +663,33 @@ function Step1KPISelection({
 // ========== Step 2: AI Coach Chat ==========
 
 const WOOP_STEPS = [
-  { key: 'wish', label: 'Wish', sub: '願望', color: '#3b82f6', keywords: ['願望', '良いこと', '達成すると', 'どんな意味', 'なぜ大切', 'なぜこの'] },
-  { key: 'outcome', label: 'Outcome', sub: '成果イメージ', color: '#8b5cf6', keywords: ['理想', '具体的に想像', 'イメージ', '状態', '雰囲気', '反応', '数字が出'] },
-  { key: 'obstacle', label: 'Obstacle', sub: '障害', color: '#f59e0b', keywords: ['障害', '妨げ', '困難', '課題', 'リスク', '阻む', 'もし', 'if-then', '対処'] },
-  { key: 'plan', label: 'Plan', sub: '対策計画', color: '#10b981', keywords: ['アクション', '具体的に', 'いつから', 'いつまで', '成果物', 'スケジュール', '計画', 'まとめ'] },
+  { key: 'wish', label: 'Wish', sub: '願望', color: '#3b82f6' },
+  { key: 'outcome', label: 'Outcome', sub: '成果イメージ', color: '#8b5cf6' },
+  { key: 'obstacle', label: 'Obstacle', sub: '障害', color: '#f59e0b' },
+  { key: 'plan', label: 'Plan', sub: '対策計画', color: '#10b981' },
 ] as const
 
 function detectWoopPhase(messages: ChatMessage[]): number {
-  // Analyze assistant messages to detect which WOOP phase we're in
-  const assistantMsgs = messages.filter(m => m.role === 'assistant').map(m => m.content.toLowerCase())
+  // Look for [WOOP:phase_name] tag in AI responses (added by system prompt)
+  const assistantMsgs = messages.filter(m => m.role === 'assistant')
   if (assistantMsgs.length === 0) return 0
 
-  const lastMsg = assistantMsgs[assistantMsgs.length - 1]
-  const allText = assistantMsgs.join(' ')
-
-  // Check from Plan backwards - later phases take priority
-  for (let i = WOOP_STEPS.length - 1; i >= 0; i--) {
-    const step = WOOP_STEPS[i]
-    const matchCount = step.keywords.filter(kw => lastMsg.includes(kw)).length
-    if (matchCount >= 2) return i
+  // Scan from latest message backwards to find the most recent phase tag
+  for (let i = assistantMsgs.length - 1; i >= 0; i--) {
+    const content = assistantMsgs[i].content
+    if (content.includes('[WOOP:plan]')) return 3
+    if (content.includes('[WOOP:obstacle]')) return 2
+    if (content.includes('[WOOP:outcome]')) return 1
+    if (content.includes('[WOOP:wish]')) return 0
   }
 
-  // Fallback: estimate by message count
-  const rounds = Math.floor(assistantMsgs.length)
-  if (rounds <= 1) return 0  // Wish
-  if (rounds <= 2) return 1  // Outcome
-  if (rounds <= 4) return 2  // Obstacle
-  return 3                    // Plan
+  // Fallback: conservative estimate by user-AI exchange rounds
+  // Count completed rounds (user asked, AI answered)
+  const userRounds = messages.filter(m => m.role === 'user').length - 1 // subtract initial prompt
+  if (userRounds <= 1) return 0  // Wish: first 1-2 exchanges
+  if (userRounds <= 3) return 1  // Outcome: 2-3 exchanges
+  if (userRounds <= 5) return 2  // Obstacle: 4-5 exchanges
+  return 3                       // Plan: 6+ exchanges
 }
 
 function WoopIndicator({ currentPhase }: { currentPhase: number }) {
@@ -832,6 +832,8 @@ function Step2CoachChat({
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.filter(m => m.role === 'assistant' || messages.indexOf(m) > 0).map((msg, i) => {
             if (msg.role === 'user' && messages.indexOf(msg) === 0) return null
+            // Strip [WOOP:...] tags from display
+            const displayContent = msg.content.replace(/\[WOOP:(wish|outcome|obstacle|plan)\]/gi, '').trim()
             return (
               <div
                 key={i}
@@ -848,7 +850,7 @@ function Step2CoachChat({
                       : 'bg-slate-100 text-slate-800'
                   )}
                 >
-                  {msg.content}
+                  {displayContent}
                 </div>
               </div>
             )
