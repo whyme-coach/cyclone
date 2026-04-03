@@ -663,72 +663,84 @@ function Step1KPISelection({
 // ========== Step 2: AI Coach Chat ==========
 
 const WOOP_STEPS = [
-  { key: 'wish', label: 'Wish', sub: '願望', color: '#3b82f6' },
-  { key: 'outcome', label: 'Outcome', sub: '成果イメージ', color: '#8b5cf6' },
-  { key: 'obstacle', label: 'Obstacle', sub: '障害', color: '#f59e0b' },
-  { key: 'plan', label: 'Plan', sub: '対策計画', color: '#10b981' },
+  { key: 'wish', label: 'Wish', sub: '願望の具体化', color: '#3b82f6', desc: 'KPIを自分ごとの願望に' },
+  { key: 'outcome', label: 'Outcome', sub: '成果イメージ', color: '#8b5cf6', desc: '五感レベルで成功を描写' },
+  { key: 'obstacle', label: 'Obstacle', sub: '障害の特定', color: '#f59e0b', desc: '内的・外的障害を深掘り' },
+  { key: 'plan', label: 'Plan', sub: 'if-thenプラン', color: '#10b981', desc: '障害→具体的行動計画' },
 ] as const
 
 function detectWoopPhase(messages: ChatMessage[]): number {
-  // Look for [WOOP:phase_name] tag in AI responses (added by system prompt)
+  // Primary: look for [WOOP:phase] tag in AI responses (mandatory per system prompt)
   const assistantMsgs = messages.filter(m => m.role === 'assistant')
   if (assistantMsgs.length === 0) return 0
 
   // Scan from latest message backwards to find the most recent phase tag
   for (let i = assistantMsgs.length - 1; i >= 0; i--) {
     const content = assistantMsgs[i].content
-    if (content.includes('[WOOP:plan]')) return 3
-    if (content.includes('[WOOP:obstacle]')) return 2
-    if (content.includes('[WOOP:outcome]')) return 1
-    if (content.includes('[WOOP:wish]')) return 0
+    // Case-insensitive match for robustness
+    const match = content.match(/\[WOOP:(wish|outcome|obstacle|plan)\]/i)
+    if (match) {
+      const phase = match[1].toLowerCase()
+      if (phase === 'plan') return 3
+      if (phase === 'obstacle') return 2
+      if (phase === 'outcome') return 1
+      return 0
+    }
   }
 
-  // Fallback: conservative estimate by user-AI exchange rounds
-  // Count completed rounds (user asked, AI answered)
-  const userRounds = messages.filter(m => m.role === 'user').length - 1 // subtract initial prompt
-  if (userRounds <= 1) return 0  // Wish: first 1-2 exchanges
-  if (userRounds <= 3) return 1  // Outcome: 2-3 exchanges
-  if (userRounds <= 5) return 2  // Obstacle: 4-5 exchanges
-  return 3                       // Plan: 6+ exchanges
+  // Fallback: conservative estimate by user exchange rounds (excluding initial prompt)
+  const userRounds = messages.filter(m => m.role === 'user').length - 1
+  if (userRounds <= 2) return 0   // Wish: first 1-2 exchanges
+  if (userRounds <= 4) return 1   // Outcome: 3-4 exchanges
+  if (userRounds <= 6) return 2   // Obstacle: 5-6 exchanges
+  return 3                        // Plan: 7+ exchanges
 }
 
 function WoopIndicator({ currentPhase }: { currentPhase: number }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '12px 16px', background: '#f8fafc', borderRadius: 12, marginBottom: 0 }}>
-      {WOOP_STEPS.map((step, i) => (
-        <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, position: 'relative' }}>
-            {/* Circle */}
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: i <= currentPhase ? step.color : '#e2e8f0',
-              color: i <= currentPhase ? '#fff' : '#94a3b8',
-              fontSize: 14, fontWeight: 700,
-              boxShadow: i === currentPhase ? `0 0 0 4px ${step.color}33` : 'none',
-              transition: 'all 0.5s ease',
-            }}>
-              {i < currentPhase ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-              ) : (
-                <span>{step.label[0]}</span>
-              )}
-            </div>
-            {/* Label */}
-            <div style={{ marginTop: 4, textAlign: 'center' }}>
-              <p style={{ fontSize: 11, fontWeight: i === currentPhase ? 700 : 500, color: i <= currentPhase ? step.color : '#94a3b8', transition: 'all 0.3s ease', margin: 0 }}>
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: '16px 20px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      {/* Step circles + connectors */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+        {WOOP_STEPS.map((step, i) => (
+          <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+              {/* Circle */}
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: i < currentPhase ? step.color : i === currentPhase ? '#fff' : '#f1f5f9',
+                border: i === currentPhase ? `2.5px solid ${step.color}` : i < currentPhase ? 'none' : '2px solid #e2e8f0',
+                color: i < currentPhase ? '#fff' : i === currentPhase ? step.color : '#94a3b8',
+                fontSize: 15, fontWeight: 700,
+                boxShadow: i === currentPhase ? `0 0 0 4px ${step.color}20, 0 2px 8px ${step.color}30` : 'none',
+                transition: 'all 0.5s ease',
+              }}>
+                {i < currentPhase ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                ) : (
+                  <span>{step.label[0]}</span>
+                )}
+              </div>
+              {/* Label */}
+              <p style={{ fontSize: 11, fontWeight: i === currentPhase ? 700 : 500, color: i <= currentPhase ? step.color : '#94a3b8', margin: '6px 0 0', transition: 'all 0.3s ease' }}>
                 {step.label}
               </p>
-              <p style={{ fontSize: 10, color: i === currentPhase ? '#475569' : '#cbd5e1', margin: 0, transition: 'all 0.3s ease' }}>
+              <p style={{ fontSize: 10, color: i === currentPhase ? '#475569' : '#cbd5e1', margin: '1px 0 0', transition: 'all 0.3s ease' }}>
                 {step.sub}
               </p>
             </div>
+            {/* Connector line */}
+            {i < WOOP_STEPS.length - 1 && (
+              <div style={{ flex: '0 0 auto', width: 48, height: 2.5, borderRadius: 2, background: i < currentPhase ? WOOP_STEPS[i + 1].color : '#e2e8f0', transition: 'background 0.5s ease', marginBottom: 28 }} />
+            )}
           </div>
-          {/* Connector line */}
-          {i < WOOP_STEPS.length - 1 && (
-            <div style={{ width: 40, height: 2, background: i < currentPhase ? WOOP_STEPS[i + 1].color : '#e2e8f0', transition: 'background 0.5s ease', marginBottom: 20 }} />
-          )}
-        </div>
-      ))}
+        ))}
+      </div>
+      {/* Current phase description */}
+      <div style={{ textAlign: 'center', marginTop: 8, padding: '6px 12px', background: `${WOOP_STEPS[currentPhase].color}08`, borderRadius: 8, transition: 'all 0.3s ease' }}>
+        <p style={{ fontSize: 11, color: WOOP_STEPS[currentPhase].color, fontWeight: 600, margin: 0 }}>
+          {WOOP_STEPS[currentPhase].desc}
+        </p>
+      </div>
     </div>
   )
 }
