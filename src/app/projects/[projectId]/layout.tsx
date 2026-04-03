@@ -213,6 +213,8 @@ function ProjectHeader({ project, userId, sidebarOpen, onToggleSidebar }: {
 function SidebarUserSection() {
   const { user, profile, signOut } = useAuth()
   const router = useRouter()
+  const params = useParams()
+  const projectId = params.projectId as string
   const [menuOpen, setMenuOpen] = useState(false)
 
   if (!user) return null
@@ -244,7 +246,7 @@ function SidebarUserSection() {
           <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
           <div className="absolute bottom-full left-2 right-2 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1">
             <button
-              onClick={() => { setMenuOpen(false); router.push('/settings') }}
+              onClick={() => { setMenuOpen(false); router.push(`/projects/${projectId}/settings`) }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
             >
               <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
