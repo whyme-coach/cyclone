@@ -173,15 +173,36 @@ export default function ActionPlansPage() {
       try {
         const fiscalYear = project?.fiscal_year || new Date().getFullYear()
 
-        // Fetch context data: goals, strategies, measures for this department
-        const [goalsRes, stratRes, measRes] = await Promise.all([
+        // Fetch context data: goals, strategies, measures, dept profile
+        const [goalsRes, stratRes, measRes, deptProfileRes] = await Promise.all([
           supabase.from('management_goals').select('title, target_value, target_unit, type').eq('project_id', project!.id).order('sort_order'),
           supabase.from('strategies').select('title').eq('project_id', project!.id).order('sort_order'),
           supabase.from('measures').select('title, description').eq('project_id', project!.id).eq('department_id', deptId).order('sort_order'),
+          supabase.from('department_profiles').select('strengths, challenges, technologies, previous_year_initiatives, previous_year_summary').eq('project_id', project!.id).eq('department_id', deptId).maybeSingle(),
         ])
         const goalsStr = goalsRes.data?.map((g: { title: string; target_value?: string; target_unit?: string; type: string }) => `${g.title}${g.target_value ? `（${g.target_value}${g.target_unit || ''}）` : ''} [${g.type}]`).join('\n') || ''
         const stratStr = stratRes.data?.map((s: { title: string }) => s.title).join('\n') || ''
         const measStr = measRes.data?.map((m: { title: string; description?: string }) => `${m.title}${m.description ? `: ${m.description}` : ''}`).join('\n') || ''
+
+        // Build department profile context string
+        let deptProfileStr = ''
+        const dp = deptProfileRes.data
+        if (dp) {
+          const parts: string[] = []
+          if (dp.strengths && Array.isArray(dp.strengths)) {
+            parts.push('部門の強み:\n' + (dp.strengths as Array<{title: string; detail: string}>).map((s: {title: string; detail: string}) => `${s.title}: ${s.detail}`).join('\n'))
+          }
+          if (dp.challenges && Array.isArray(dp.challenges)) {
+            parts.push('部門の課題:\n' + (dp.challenges as Array<{title: string; detail: string}>).map((c: {title: string; detail: string}) => `${c.title}: ${c.detail}`).join('\n'))
+          }
+          if (dp.technologies && Array.isArray(dp.technologies)) {
+            parts.push('技術領域・ツール: ' + (dp.technologies as string[]).join(', '))
+          }
+          if (dp.previous_year_initiatives && Array.isArray(dp.previous_year_initiatives)) {
+            parts.push('過年度の施策実績:\n' + (dp.previous_year_initiatives as Array<{title: string; status: string; detail: string}>).map((i: {title: string; status: string; detail: string}) => `${i.title}（${i.status === 'achieved' ? '達成' : '未達'}）: ${i.detail}`).join('\n'))
+          }
+          deptProfileStr = parts.join('\n\n')
+        }
 
         const comp = company as { name?: string; industry?: string; business_description?: string } | null
         const userPrompt = COACH_ACTION_PLAN_USER_PROMPT({
@@ -198,6 +219,7 @@ export default function ActionPlansPage() {
           goals: goalsStr,
           strategies: stratStr,
           measures: measStr,
+          deptProfile: deptProfileStr,
         })
         const initialUserMsg: ChatMessage = {
           role: 'user',

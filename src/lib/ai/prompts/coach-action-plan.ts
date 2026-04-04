@@ -167,6 +167,7 @@ export const COACH_ACTION_PLAN_USER_PROMPT = (params: {
   goals: string
   strategies: string
   measures: string
+  deptProfile?: string
 }) => {
   const p = params
   return `以下のKPIについて、達成するためのアクションプランを一緒に考えたいです。
@@ -185,7 +186,10 @@ ${p.strategies || '（未設定）'}
 
 当部門の施策:
 ${p.measures || '（未設定）'}
-
+${p.deptProfile ? `
+【部門プロファイル（過年度実績・強み・課題）】
+${p.deptProfile}
+` : ''}
 【対象KPI】
 対象部門: ${p.departmentName}
 年度: ${p.fiscalYear}年度
@@ -194,6 +198,7 @@ KPIの説明: ${p.kpiDescription}
 目標値: ${p.kpiTarget} ${p.kpiUnit}
 ${p.kpiPreviousMax ? `過年度実績（最大値）: ${p.kpiPreviousMax} ${p.kpiUnit}` : ''}
 
-上記の会社情報・事業計画の文脈を踏まえた上で、このKPIのアクションプランを一緒に考えてください。
+上記の会社情報・事業計画の文脈・部門プロファイルを踏まえた上で、このKPIのアクションプランを一緒に考えてください。
+特に過年度の施策で未達だった項目や部門の課題がある場合は、それを踏まえたコーチングをお願いします。
 よろしくお願いします。`
 }

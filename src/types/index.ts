@@ -82,6 +82,30 @@ export interface UserProfile {
   updated_at: string
 }
 
+export interface DepartmentProfile {
+  id: string
+  project_id: string
+  department_id: string
+  description?: string
+  strengths?: Array<{ title: string; detail: string }>
+  challenges?: Array<{ title: string; detail: string }>
+  technologies?: string[]
+  previous_year_summary?: {
+    year: number
+    achievement_count: number
+    total_count: number
+    achievement_rate: number
+    kpi_results: Array<{ name: string; fy_prev: string; fy_target: string; fy_actual: string; achieved: boolean }>
+    lessons: string
+  }
+  previous_year_initiatives?: Array<{ title: string; status: 'achieved' | 'not_achieved'; detail: string }>
+  headcount?: { total: number; breakdown: Array<{ role: string; count: number; names?: string[] }> }
+  next_year_focus?: Array<{ title: string; detail: string }>
+  raw_extraction?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface OrganizationMember {
   id: string
   organization_id: string
