@@ -53,6 +53,7 @@ interface GanttTask {
   action_plan_id: string
   kpi_name: string
   responsible_user_name?: string
+  executor_user_name?: string
 }
 
 // ---------- Main Component ----------
@@ -473,6 +474,7 @@ export default function ActionPlansPage() {
             action_plan_id: item.action_plan_id,
             kpi_name: kpi?.name || plan.title,
             responsible_user_name: item.responsible_user_id ? userNameMap[item.responsible_user_id] : undefined,
+            executor_user_name: item.executor_user_id ? userNameMap[item.executor_user_id] : undefined,
           })
         }
       }
@@ -505,6 +507,15 @@ export default function ActionPlansPage() {
       toast('更新しました', 'success')
       setShowEditModal(false)
       setEditingTask(null)
+    } catch {
+      toast('更新に失敗しました', 'error')
+    }
+  }
+
+  const handleUpdateTaskDates = async (taskId: string, startDate: string, endDate: string) => {
+    try {
+      await supabase.from('action_items').update({ start_date: startDate, end_date: endDate }).eq('id', taskId)
+      setGanttTasks(prev => prev.map(t => t.id === taskId ? { ...t, start_date: startDate, end_date: endDate } : t))
     } catch {
       toast('更新に失敗しました', 'error')
     }
@@ -594,6 +605,7 @@ export default function ActionPlansPage() {
               fiscalYear={project?.fiscal_year || new Date().getFullYear()}
               members={projectMembers}
               onEditTask={(task) => { setEditingTask(task); setShowEditModal(true) }}
+              onUpdateTaskDates={handleUpdateTaskDates}
               onBack={() => setStep(1)}
             />
           )}
@@ -1219,12 +1231,14 @@ function Step4GanttChart({
   fiscalYear,
   members,
   onEditTask,
+  onUpdateTaskDates,
   onBack,
 }: {
   tasks: GanttTask[]
   fiscalYear: number
   members: ProjectMember[]
   onEditTask: (task: GanttTask) => void
+  onUpdateTaskDates: (taskId: string, startDate: string, endDate: string) => void
   onBack: () => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -1296,8 +1310,11 @@ function Step4GanttChart({
   const todayWeekIndex = weeks.findIndex(w => today >= w.start && today <= w.end)
 
   const WEEK_WIDTH = 48
-  const LEFT_PANEL_WIDTH = 320
+  const LEFT_PANEL_WIDTH = 520
   const ROW_HEIGHT = 40
+
+  // Drag state
+  const [dragging, setDragging] = useState<{ taskId: string; startX: number; origStart: string; origEnd: string } | null>(null)
 
   const getBarStyle = (task: GanttTask) => {
     const taskStart = new Date(task.start_date)
@@ -1378,8 +1395,10 @@ function Step4GanttChart({
             zIndex: 10,
           }}>
             {/* Left header */}
-            <div style={{ height: '56px', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', alignItems: 'flex-end' }}>
-              <span className="text-xs font-semibold text-slate-500">タスク</span>
+            <div style={{ height: '56px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'flex-end' }}>
+              <span style={{ width: 240, padding: '8px 16px' }} className="text-xs font-semibold text-slate-500">タスク</span>
+              <span style={{ width: 100, padding: '8px 8px' }} className="text-xs font-semibold text-slate-500">責任者</span>
+              <span style={{ width: 100, padding: '8px 8px' }} className="text-xs font-semibold text-slate-500">実行者</span>
             </div>
             {/* Left rows */}
             {groupedTasks.map(([kpiName, items]) => (
@@ -1401,15 +1420,17 @@ function Step4GanttChart({
                     height: `${ROW_HEIGHT}px`,
                     display: 'flex',
                     alignItems: 'center',
-                    padding: '0 16px 0 28px',
                     borderBottom: '1px solid #f8fafc',
                   }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ width: 240, padding: '0 16px 0 28px', minWidth: 0 }}>
                       <p className="text-xs text-slate-700 truncate">{task.title}</p>
                     </div>
-                    {task.responsible_user_name && (
-                      <span className="text-[10px] text-slate-400 ml-2 whitespace-nowrap">{task.responsible_user_name}</span>
-                    )}
+                    <div style={{ width: 100, padding: '0 8px' }}>
+                      <span className="text-xs text-slate-500 truncate block">{task.responsible_user_name || '-'}</span>
+                    </div>
+                    <div style={{ width: 100, padding: '0 8px' }}>
+                      <span className="text-xs text-slate-500 truncate block">{task.executor_user_name || '-'}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1498,9 +1519,41 @@ function Step4GanttChart({
                         borderBottom: '1px solid #f8fafc',
                       }}>
                         <div
-                          style={getBarStyle(task)}
-                          onClick={() => onEditTask(task)}
-                          title={`${task.title} (${ACTION_ITEM_STATUS_LABELS[task.status]})`}
+                          style={{ ...getBarStyle(task), cursor: 'grab' }}
+                          onClick={(e) => { if (!dragging) onEditTask(task) ; e.stopPropagation() }}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            setDragging({ taskId: task.id, startX: e.clientX, origStart: task.start_date, origEnd: task.end_date })
+                            const handleMouseMove = (ev: MouseEvent) => {
+                              const dx = ev.clientX - e.clientX
+                              const weekShift = Math.round(dx / WEEK_WIDTH)
+                              if (weekShift === 0) return
+                              const origStart = new Date(task.start_date)
+                              const origEnd = new Date(task.end_date)
+                              origStart.setDate(origStart.getDate() + weekShift * 7)
+                              origEnd.setDate(origEnd.getDate() + weekShift * 7)
+                              const bar = e.currentTarget as HTMLElement
+                              const origLeft = parseInt(bar.style.left) || 0
+                              bar.style.left = `${origLeft + dx}px`
+                            }
+                            const handleMouseUp = (ev: MouseEvent) => {
+                              document.removeEventListener('mousemove', handleMouseMove)
+                              document.removeEventListener('mouseup', handleMouseUp)
+                              const dx = ev.clientX - e.clientX
+                              const weekShift = Math.round(dx / WEEK_WIDTH)
+                              if (weekShift !== 0) {
+                                const newStart = new Date(task.start_date)
+                                const newEnd = new Date(task.end_date)
+                                newStart.setDate(newStart.getDate() + weekShift * 7)
+                                newEnd.setDate(newEnd.getDate() + weekShift * 7)
+                                onUpdateTaskDates(task.id, newStart.toISOString().split('T')[0], newEnd.toISOString().split('T')[0])
+                              }
+                              setDragging(null)
+                            }
+                            document.addEventListener('mousemove', handleMouseMove)
+                            document.addEventListener('mouseup', handleMouseUp)
+                          }}
+                          title={`${task.title} (${ACTION_ITEM_STATUS_LABELS[task.status]}) - ドラッグで移動`}
                         >
                           <span style={{
                             fontSize: '10px',
@@ -1511,6 +1564,7 @@ function Step4GanttChart({
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             display: 'block',
+                            pointerEvents: 'none',
                           }}>
                             {task.title}
                           </span>
