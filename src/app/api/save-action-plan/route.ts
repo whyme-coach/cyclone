@@ -7,8 +7,14 @@ export async function POST(req: Request) {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { projectId, departmentId, kpiId, title, fiscalYear, items, existingPlanId } = await req.json()
-  if (!projectId || !departmentId || !kpiId || !items) {
+  let body
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+  const { projectId, departmentId, kpiId, title, fiscalYear, items, existingPlanId } = body
+  if (!projectId || !departmentId || !items) {
     return NextResponse.json({ error: 'Missing data' }, { status: 400 })
   }
 
@@ -19,18 +25,22 @@ export async function POST(req: Request) {
 
     if (existingPlanId) {
       // Update: delete old items first
-      await admin.from('action_items').delete().eq('action_plan_id', existingPlanId)
+      const { error: delErr } = await admin.from('action_items').delete().eq('action_plan_id', existingPlanId)
+      if (delErr) console.error('Delete items error:', delErr)
     } else {
       // Create new plan
-      const { data: planData, error: planError } = await admin.from('action_plans').insert({
+      const insertData: Record<string, unknown> = {
         project_id: projectId,
         department_id: departmentId,
-        kpi_id: kpiId,
         title: title || 'アクションプラン',
         fiscal_year: fiscalYear,
         status: 'active',
         created_by: user.id,
-      }).select('id').single()
+      }
+      // Only add kpi_id if provided (column may not exist yet)
+      if (kpiId) insertData.kpi_id = kpiId
+
+      const { data: planData, error: planError } = await admin.from('action_plans').insert(insertData).select('id').single()
 
       if (planError || !planData) {
         console.error('Create plan error:', planError)
