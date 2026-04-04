@@ -384,6 +384,14 @@ export default function ActionPlansPage() {
   const handleSaveActionPlan = async () => {
     if (!project || !selectedKpi || draftItems.length === 0) return
     try {
+      // Extract WOOP summary from chat messages
+      const woopSummary = extractWoopSummary(messages)
+      const summaryData = (woopSummary.wish || woopSummary.obstacle) ? {
+        wish: woopSummary.wish || undefined,
+        obstacle: woopSummary.obstacle || undefined,
+        plan: `${draftItems.length}つのアクションで対処`,
+      } : undefined
+
       const res = await fetch('/api/save-action-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -395,6 +403,7 @@ export default function ActionPlansPage() {
           fiscalYear: project.fiscal_year,
           items: draftItems,
           existingPlanId: existingPlanForKpi?.id || null,
+          woopSummary: summaryData || existingPlanForKpi?.woop_summary || null,
         }),
       })
       if (!res.ok) throw new Error('Save failed')
@@ -573,6 +582,7 @@ export default function ActionPlansPage() {
           items={draftItems}
           isUpdate={!!existingPlanForKpi}
           messages={messages}
+          savedWoopSummary={existingPlanForKpi?.woop_summary as { wish?: string; obstacle?: string; plan?: string } | undefined}
           onUpdateItem={handleUpdateDraftItem}
           onAddItem={handleAddDraftItem}
           onRemoveItem={handleRemoveDraftItem}
@@ -1001,6 +1011,7 @@ function Step3EditItems({
   items,
   isUpdate,
   messages,
+  savedWoopSummary,
   onUpdateItem,
   onAddItem,
   onRemoveItem,
@@ -1013,6 +1024,7 @@ function Step3EditItems({
   items: DraftActionItem[]
   isUpdate: boolean
   messages: ChatMessage[]
+  savedWoopSummary?: { wish?: string; obstacle?: string; plan?: string }
   onUpdateItem: (id: string, updates: Partial<DraftActionItem>) => void
   onAddItem: () => void
   onRemoveItem: (id: string) => void
@@ -1033,8 +1045,13 @@ function Step3EditItems({
 
   const valid = items.length > 0 && items.every(i => i.title && i.start_date && i.end_date)
 
-  const summary = extractWoopSummary(messages)
-  const hasSummary = summary.wish || summary.outcome || summary.obstacle
+  // Use chat-extracted summary, or fallback to saved DB summary
+  const chatSummary = extractWoopSummary(messages)
+  const summary = {
+    wish: chatSummary.wish || savedWoopSummary?.wish || '',
+    obstacle: chatSummary.obstacle || savedWoopSummary?.obstacle || '',
+  }
+  const hasSummary = summary.wish || summary.obstacle
 
   return (
     <>

@@ -248,6 +248,7 @@ export interface ActionPlan {
   fiscal_year: number
   fiscal_quarter?: number
   status: 'draft' | 'active' | 'completed' | 'revised'
+  woop_summary?: { wish?: string; obstacle?: string; plan?: string }
   created_by?: string
   created_at: string
   updated_at: string
