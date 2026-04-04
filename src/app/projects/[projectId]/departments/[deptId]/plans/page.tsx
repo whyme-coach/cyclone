@@ -349,6 +349,15 @@ export default function ActionPlansPage() {
     setDraftItems(prev => prev.filter(item => item.id !== id))
   }
 
+  const handleReorderDraftItem = (fromIndex: number, toIndex: number) => {
+    setDraftItems(prev => {
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
+  }
+
   const handleSaveActionPlan = async () => {
     if (!project || !selectedKpi || draftItems.length === 0) return
     try {
@@ -509,10 +518,17 @@ export default function ActionPlansPage() {
           kpi={selectedKpi}
           items={draftItems}
           isUpdate={!!existingPlanForKpi}
+          messages={messages}
           onUpdateItem={handleUpdateDraftItem}
           onAddItem={handleAddDraftItem}
           onRemoveItem={handleRemoveDraftItem}
+          onReorderItem={handleReorderDraftItem}
           onSave={handleSaveActionPlan}
+          onRecoach={() => {
+            setMessages([])
+            setDraftItems([])
+            setStep(2)
+          }}
           onBack={() => {
             if (existingPlanForKpi) {
               setStep(1)
@@ -906,27 +922,53 @@ function toWeekLabel(dateStr: string): string {
   return `${m}月${week}週`
 }
 
+function extractWoopSummary(messages: ChatMessage[]): { wish: string; outcome: string; obstacle: string } {
+  let wish = '', outcome = '', obstacle = ''
+  let currentPhase = 'wish'
+  for (const msg of messages) {
+    if (msg.role === 'assistant') {
+      const phaseMatch = msg.content.match(/\[WOOP:(wish|outcome|obstacle|plan)\]/i)
+      if (phaseMatch) currentPhase = phaseMatch[1].toLowerCase()
+    }
+    if (msg.role === 'user' && messages.indexOf(msg) > 0) {
+      const clean = msg.content.replace(/\[WOOP:[^\]]*\]/gi, '').replace(/\[SUGGEST:[^\]]*\]/gi, '').trim()
+      if (clean.length < 5) continue
+      if (currentPhase === 'wish' && !wish) wish = clean
+      else if (currentPhase === 'outcome' && !outcome) outcome = clean
+      else if (currentPhase === 'obstacle' && !obstacle) obstacle = clean
+    }
+  }
+  return { wish, outcome, obstacle }
+}
+
 function Step3EditItems({
   kpi,
   items,
   isUpdate,
+  messages,
   onUpdateItem,
   onAddItem,
   onRemoveItem,
+  onReorderItem,
   onSave,
+  onRecoach,
   onBack,
 }: {
   kpi: KPI
   items: DraftActionItem[]
   isUpdate: boolean
+  messages: ChatMessage[]
   onUpdateItem: (id: string, updates: Partial<DraftActionItem>) => void
   onAddItem: () => void
   onRemoveItem: (id: string) => void
+  onReorderItem: (from: number, to: number) => void
   onSave: () => void
+  onRecoach: () => void
   onBack: () => void
 }) {
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
 
   const handleSave = async () => {
     setSaving(true)
@@ -936,40 +978,98 @@ function Step3EditItems({
 
   const valid = items.length > 0 && items.every(i => i.title && i.start_date && i.end_date)
 
+  const summary = extractWoopSummary(messages)
+  const hasSummary = summary.wish || summary.outcome || summary.obstacle
+
   return (
     <>
+      {/* KPI header + recoach button */}
       <Card className="bg-blue-50 border-blue-200">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-blue-600 font-medium">対象KPI</p>
             <p className="text-sm font-semibold text-slate-900">{kpi.name}</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={onBack}>戻る</Button>
+          <div className="flex gap-2">
+            {!isUpdate && (
+              <Button variant="secondary" size="sm" onClick={onRecoach}>
+                <span className="flex items-center gap-1">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                  コーチングやり直し
+                </span>
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={onBack}>戻る</Button>
+          </div>
         </div>
       </Card>
 
+      {/* WOOP Summary */}
+      {hasSummary && (
+        <Card>
+          <p className="text-xs font-bold text-slate-500 tracking-wider uppercase mb-3">AIコーチング サマリー</p>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {summary.wish && (
+              <div style={{ flex: 1, padding: '10px 14px', background: '#eff6ff', borderRadius: 10, borderLeft: '3px solid #3b82f6' }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', margin: '0 0 4px', letterSpacing: '0.05em' }}>目標（Wish）</p>
+                <p style={{ fontSize: 12, color: '#1e293b', margin: 0, lineHeight: 1.5 }}>{summary.wish}</p>
+              </div>
+            )}
+            {summary.obstacle && (
+              <div style={{ flex: 1, padding: '10px 14px', background: '#fffbeb', borderRadius: 10, borderLeft: '3px solid #f59e0b' }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', margin: '0 0 4px', letterSpacing: '0.05em' }}>課題（Obstacle）</p>
+                <p style={{ fontSize: 12, color: '#1e293b', margin: 0, lineHeight: 1.5 }}>{summary.obstacle}</p>
+              </div>
+            )}
+            <div style={{ flex: 1, padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, borderLeft: '3px solid #10b981' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: '#10b981', margin: '0 0 4px', letterSpacing: '0.05em' }}>解決策（Plan）</p>
+              <p style={{ fontSize: 12, color: '#1e293b', margin: 0, lineHeight: 1.5 }}>以下の{items.length}つのアクションで対処</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Action items table */}
       <Card padding={false}>
         <div className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 32 }}></th>
                 <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', width: 36 }}>#</th>
                 <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 200 }}>アクション</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 160 }}>成果物</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 100 }}>開始週</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 100 }}>完了週</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 48 }}></th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 140 }}>成果物</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 120 }}>開始日</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 80 }}>開始週</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 120 }}>完了日</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 80 }}>完了週</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 40 }}></th>
               </tr>
             </thead>
             <tbody>
               {items.map((item, index) => (
-                <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s', cursor: 'pointer' }}
-                  onClick={() => setEditingId(editingId === item.id ? null : item.id)}
+                <tr
+                  key={item.id}
+                  draggable
+                  onDragStart={() => setDragIndex(index)}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={() => { if (dragIndex !== null && dragIndex !== index) { onReorderItem(dragIndex, index); setDragIndex(null) } }}
+                  onDragEnd={() => setDragIndex(null)}
+                  style={{
+                    borderBottom: '1px solid #f1f5f9',
+                    transition: 'background 0.15s',
+                    opacity: dragIndex === index ? 0.4 : 1,
+                    cursor: 'grab',
+                  }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                 >
+                  {/* Drag handle */}
+                  <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'top', color: '#cbd5e1', cursor: 'grab' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+                  </td>
                   <td style={{ padding: '10px 12px', color: '#94a3b8', fontWeight: 600, verticalAlign: 'top' }}>{index + 1}</td>
-                  <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
+                  <td style={{ padding: '10px 12px', verticalAlign: 'top' }} onClick={() => setEditingId(editingId === item.id ? null : item.id)}>
                     {editingId === item.id ? (
                       <div className="space-y-2" onClick={e => e.stopPropagation()}>
                         <input
@@ -1008,33 +1108,33 @@ function Step3EditItems({
                       <span style={{ color: '#64748b' }}>{item.deliverable || '—'}</span>
                     )}
                   </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'center', verticalAlign: 'top' }}>
-                    {editingId === item.id ? (
-                      <input
-                        type="date"
-                        style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
-                        value={item.start_date}
-                        onChange={e => onUpdateItem(item.id, { start_date: e.target.value })}
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 12, color: '#475569' }}>{toWeekLabel(item.start_date)}</span>
-                    )}
+                  {/* Start date + auto week */}
+                  <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <input
+                      type="date"
+                      style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 6, outline: 'none', width: 110 }}
+                      value={item.start_date}
+                      onChange={e => onUpdateItem(item.id, { start_date: e.target.value })}
+                      onClick={e => e.stopPropagation()}
+                    />
                   </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'center', verticalAlign: 'top' }}>
-                    {editingId === item.id ? (
-                      <input
-                        type="date"
-                        style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
-                        value={item.end_date}
-                        onChange={e => onUpdateItem(item.id, { end_date: e.target.value })}
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 12, color: '#475569' }}>{toWeekLabel(item.end_date)}</span>
-                    )}
+                  <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <span style={{ fontSize: 12, color: '#3b82f6', fontWeight: 500 }}>{toWeekLabel(item.start_date)}</span>
                   </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'center', verticalAlign: 'top' }}>
+                  {/* End date + auto week */}
+                  <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <input
+                      type="date"
+                      style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 6, outline: 'none', width: 110 }}
+                      value={item.end_date}
+                      onChange={e => onUpdateItem(item.id, { end_date: e.target.value })}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </td>
+                  <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <span style={{ fontSize: 12, color: '#3b82f6', fontWeight: 500 }}>{toWeekLabel(item.end_date)}</span>
+                  </td>
+                  <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'top' }}>
                     <button
                       onClick={e => { e.stopPropagation(); onRemoveItem(item.id) }}
                       style={{ color: '#cbd5e1', cursor: 'pointer', padding: 4, border: 'none', background: 'none', transition: 'color 0.15s' }}
