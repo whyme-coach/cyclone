@@ -375,11 +375,13 @@ export default function DepartmentProfilePage() {
             const hasResp = dept.responsibilities && Array.isArray(dept.responsibilities) && dept.responsibilities.length > 0
             return (
               <>
-                <div className="mb-4 p-4 bg-slate-50 rounded-lg border-l-4 border-blue-500">
-                  <p className="text-xs font-semibold text-blue-600 mb-1">部門の役割</p>
-                  <p className={`text-sm leading-relaxed ${hasRole ? 'text-slate-800' : 'text-slate-400'}`}>
-                    {hasRole ? dept.role_description : '未設定（初期設定の組織図ステップで業務分掌PDFを読み込むと反映されます）'}
-                  </p>
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">部門の役割</p>
+                  {hasRole ? (
+                    <p className="text-sm text-slate-800 leading-relaxed">{dept.role_description}</p>
+                  ) : (
+                    <p className="text-sm text-slate-400">未設定（初期設定の組織図ステップで業務分掌PDFを読み込むと反映されます）</p>
+                  )}
                 </div>
                 <div className="mb-4">
                   <p className="text-sm font-semibold text-slate-700 mb-2">業務分掌</p>
