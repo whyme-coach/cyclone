@@ -384,27 +384,31 @@ export default function DepartmentProfilePage() {
       <Card>
         <CardTitle>業務分掌・部門概要</CardTitle>
         <div style={{ marginTop: 12 }}>
-          {/* Show role_description from departments table */}
+          {/* Show role_description and responsibilities from departments table */}
           {(() => {
             const dept = department as { role_description?: string; responsibilities?: string[] }
+            const hasRole = dept.role_description && dept.role_description.trim().length > 0
+            const hasResp = dept.responsibilities && Array.isArray(dept.responsibilities) && dept.responsibilities.length > 0
             return (
               <>
-                {dept.role_description && (
-                  <div style={{ marginBottom: 16, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, borderLeft: '3px solid #3b82f6' }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', margin: '0 0 6px', letterSpacing: '0.05em' }}>部門の役割</p>
-                    <p style={{ fontSize: 13, color: '#1e293b', margin: 0, lineHeight: 1.6 }}>{dept.role_description}</p>
-                  </div>
-                )}
-                {dept.responsibilities && dept.responsibilities.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>業務分掌</p>
+                <div style={{ marginBottom: 16, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, borderLeft: '3px solid #3b82f6' }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', margin: '0 0 6px', letterSpacing: '0.05em' }}>部門の役割</p>
+                  <p style={{ fontSize: 13, color: hasRole ? '#1e293b' : '#94a3b8', margin: 0, lineHeight: 1.6 }}>
+                    {hasRole ? dept.role_description : '未設定（初期設定の組織図ステップで業務分掌PDFを読み込むと反映されます）'}
+                  </p>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>業務分掌</p>
+                  {hasResp ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {dept.responsibilities.map((r, i) => (
+                      {dept.responsibilities!.map((r, i) => (
                         <span key={i} style={{ fontSize: 12, background: '#eff6ff', color: '#3b82f6', padding: '4px 10px', borderRadius: 6, border: '1px solid #bfdbfe' }}>{r}</span>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>未設定（初期設定の組織図ステップで業務分掌PDFを読み込むと反映されます）</p>
+                  )}
+                </div>
               </>
             )
           })()}
