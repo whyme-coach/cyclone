@@ -419,23 +419,44 @@ export default function ActionPlansPage() {
   const fetchGanttData = useCallback(async () => {
     if (!project) return
     setLoading(true)
-    const [planRes, memberRes] = await Promise.all([
-      supabase
-        .from('action_plans')
-        .select('*, action_items(*, responsible_user:user_profiles!action_items_responsible_user_id_fkey(*), executor_user:user_profiles!action_items_executor_user_id_fkey(*))')
-        .eq('department_id', deptId)
-        .eq('project_id', project.id),
-      supabase
-        .from('project_members')
-        .select('*, user:user_profiles(*)')
-        .eq('project_id', projectId),
-    ])
 
-    if (memberRes.data) setProjectMembers(memberRes.data as ProjectMember[])
+    // Fetch plans with items (no FK join for user_profiles - FK goes via auth.users)
+    const planRes = await supabase
+      .from('action_plans')
+      .select('*, action_items(*)')
+      .eq('department_id', deptId)
+      .eq('project_id', project.id)
+
+    // Fetch project members separately, then user_profiles
+    const memberRes = await supabase
+      .from('project_members')
+      .select('*')
+      .eq('project_id', projectId)
+
+    let membersWithProfiles: ProjectMember[] = []
+    if (memberRes.data && memberRes.data.length > 0) {
+      const userIds = memberRes.data.map((m: { user_id: string }) => m.user_id)
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .in('id', userIds)
+      const profileMap = Object.fromEntries((profiles || []).map((p: { id: string; full_name?: string }) => [p.id, p]))
+      membersWithProfiles = memberRes.data.map((m: ProjectMember) => ({
+        ...m,
+        user_profile: profileMap[m.user_id] || undefined,
+      }))
+    }
+    setProjectMembers(membersWithProfiles)
+
+    // Build user name lookup from profiles
+    const userNameMap: Record<string, string> = {}
+    for (const m of membersWithProfiles) {
+      if (m.user_profile?.full_name) userNameMap[m.user_id] = m.user_profile.full_name
+    }
 
     if (planRes.data) {
       const tasks: GanttTask[] = []
-      for (const plan of planRes.data as (ActionPlan & { action_items: (ActionItem & { responsible_user?: { full_name?: string } })[] })[]) {
+      for (const plan of planRes.data as (ActionPlan & { action_items: ActionItem[] })[]) {
         const kpi = kpis.find(k => k.id === plan.kpi_id)
         for (const item of plan.action_items || []) {
           tasks.push({
@@ -451,7 +472,7 @@ export default function ActionPlansPage() {
             deliverable: item.deliverable,
             action_plan_id: item.action_plan_id,
             kpi_name: kpi?.name || plan.title,
-            responsible_user_name: item.responsible_user?.full_name || undefined,
+            responsible_user_name: item.responsible_user_id ? userNameMap[item.responsible_user_id] : undefined,
           })
         }
       }
@@ -1029,23 +1050,23 @@ function Step3EditItems({
       {/* WOOP Summary */}
       {hasSummary && (
         <Card>
-          <p className="text-xs font-bold text-slate-500 tracking-wider uppercase mb-3">AIコーチング サマリー</p>
-          <div style={{ display: 'flex', gap: 12 }}>
+          <p className="text-sm font-semibold text-slate-700 mb-3">AIコーチング サマリー</p>
+          <div className="grid grid-cols-3 gap-4">
             {summary.wish && (
-              <div style={{ flex: 1, padding: '10px 14px', background: '#eff6ff', borderRadius: 10, borderLeft: '3px solid #3b82f6' }}>
-                <p style={{ fontSize: 10, fontWeight: 700, color: '#3b82f6', margin: '0 0 4px', letterSpacing: '0.05em' }}>目標（Wish）</p>
-                <p style={{ fontSize: 12, color: '#1e293b', margin: 0, lineHeight: 1.5 }}>{summary.wish}</p>
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-xs font-semibold text-blue-600 mb-1">目標（Wish）</p>
+                <p className="text-sm text-slate-800 leading-relaxed">{summary.wish}</p>
               </div>
             )}
             {summary.obstacle && (
-              <div style={{ flex: 1, padding: '10px 14px', background: '#fffbeb', borderRadius: 10, borderLeft: '3px solid #f59e0b' }}>
-                <p style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', margin: '0 0 4px', letterSpacing: '0.05em' }}>課題（Obstacle）</p>
-                <p style={{ fontSize: 12, color: '#1e293b', margin: 0, lineHeight: 1.5 }}>{summary.obstacle}</p>
+              <div className="p-4 bg-amber-50 rounded-lg">
+                <p className="text-xs font-semibold text-amber-600 mb-1">課題（Obstacle）</p>
+                <p className="text-sm text-slate-800 leading-relaxed">{summary.obstacle}</p>
               </div>
             )}
-            <div style={{ flex: 1, padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, borderLeft: '3px solid #10b981' }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: '#10b981', margin: '0 0 4px', letterSpacing: '0.05em' }}>解決策（Plan）</p>
-              <p style={{ fontSize: 12, color: '#1e293b', margin: 0, lineHeight: 1.5 }}>以下の{items.length}つのアクションで対処</p>
+            <div className="p-4 bg-green-50 rounded-lg">
+              <p className="text-xs font-semibold text-green-600 mb-1">解決策（Plan）</p>
+              <p className="text-sm text-slate-800 leading-relaxed">以下の{items.length}つのアクションで対処</p>
             </div>
           </div>
         </Card>
