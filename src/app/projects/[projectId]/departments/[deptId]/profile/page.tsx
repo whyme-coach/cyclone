@@ -384,11 +384,38 @@ export default function DepartmentProfilePage() {
       <Card>
         <CardTitle>業務分掌・部門概要</CardTitle>
         <div style={{ marginTop: 12 }}>
+          {/* Show role_description from departments table */}
+          {(() => {
+            const dept = department as { role_description?: string; responsibilities?: string[] }
+            return (
+              <>
+                {dept.role_description && (
+                  <div style={{ marginBottom: 16, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, borderLeft: '3px solid #3b82f6' }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', margin: '0 0 6px', letterSpacing: '0.05em' }}>部門の役割</p>
+                    <p style={{ fontSize: 13, color: '#1e293b', margin: 0, lineHeight: 1.6 }}>{dept.role_description}</p>
+                  </div>
+                )}
+                {dept.responsibilities && dept.responsibilities.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>業務分掌</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {dept.responsibilities.map((r, i) => (
+                        <span key={i} style={{ fontSize: 12, background: '#eff6ff', color: '#3b82f6', padding: '4px 10px', borderRadius: 6, border: '1px solid #bfdbfe' }}>{r}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
+
+          {/* Editable description (additional notes) */}
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>部門メモ（自由記述）</p>
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="部門の役割や業務範囲を入力してください..."
-            rows={5}
+            placeholder="部門の補足情報や特記事項を入力してください..."
+            rows={4}
           />
           <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
             <Button onClick={handleSaveDescription} disabled={savingDescription}>
