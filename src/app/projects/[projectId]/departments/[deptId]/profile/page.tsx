@@ -316,15 +316,13 @@ export default function DepartmentProfilePage() {
   // RENDER
   // ====================================================================
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="space-y-6">
       {/* ----------------------------------------------------------------
           Section 1: Header
       ----------------------------------------------------------------- */}
       <div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
-          部門プロファイル
-        </h2>
-        <p style={{ fontSize: 14, color: '#64748b' }}>{department.name}</p>
+        <h2 className="text-2xl font-bold text-slate-900">部門プロファイル</h2>
+        <p className="text-sm text-slate-500 mt-1">{department.name}</p>
       </div>
 
       {/* ----------------------------------------------------------------
@@ -333,43 +331,29 @@ export default function DepartmentProfilePage() {
       <Card>
         <CardTitle>メンバー一覧</CardTitle>
         {members.length === 0 ? (
-          <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 12 }}>
+          <p className="text-sm text-slate-400 mt-3">
             この部門にはメンバーが登録されていません。
           </p>
         ) : (
-          <div style={{ overflowX: 'auto', marginTop: 12 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-sm">
               <thead>
-                <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-2 px-3 text-slate-500 font-semibold">
                     氏名
                   </th>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>
-                    役職
-                  </th>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>
-                    メール
-                  </th>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748b', fontWeight: 600 }}>
-                    ロール
-                  </th>
+                  <th className="text-left py-2 px-3 text-slate-500 font-semibold">役職</th>
+                  <th className="text-left py-2 px-3 text-slate-500 font-semibold">メール</th>
+                  <th className="text-left py-2 px-3 text-slate-500 font-semibold">ロール</th>
                 </tr>
               </thead>
               <tbody>
                 {members.map((m) => (
-                  <tr key={m.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 12px', color: '#0f172a' }}>
-                      {m.user_profile?.full_name || '-'}
-                    </td>
-                    <td style={{ padding: '8px 12px', color: '#475569' }}>
-                      {m.user_profile?.job_title || '-'}
-                    </td>
-                    <td style={{ padding: '8px 12px', color: '#475569' }}>
-                      {m.user_profile?.email || '-'}
-                    </td>
-                    <td style={{ padding: '8px 12px' }}>
-                      <Badge variant="info">{ROLE_LABELS[m.role] || m.role}</Badge>
-                    </td>
+                  <tr key={m.id} className="border-b border-slate-100">
+                    <td className="py-2.5 px-3 text-sm font-medium text-slate-900">{m.user_profile?.full_name || '-'}</td>
+                    <td className="py-2.5 px-3 text-sm text-slate-600">{m.user_profile?.job_title || '-'}</td>
+                    <td className="py-2.5 px-3 text-sm text-slate-600">{m.user_profile?.email || '-'}</td>
+                    <td className="py-2.5 px-3"><Badge variant="info">{ROLE_LABELS[m.role] || m.role}</Badge></td>
                   </tr>
                 ))}
               </tbody>
@@ -383,7 +367,7 @@ export default function DepartmentProfilePage() {
       ----------------------------------------------------------------- */}
       <Card>
         <CardTitle>業務分掌・部門概要</CardTitle>
-        <div style={{ marginTop: 12 }}>
+        <div className="mt-4">
           {/* Show role_description and responsibilities from departments table */}
           {(() => {
             const dept = department as { role_description?: string; responsibilities?: string[] }
@@ -391,22 +375,22 @@ export default function DepartmentProfilePage() {
             const hasResp = dept.responsibilities && Array.isArray(dept.responsibilities) && dept.responsibilities.length > 0
             return (
               <>
-                <div style={{ marginBottom: 16, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, borderLeft: '3px solid #3b82f6' }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', margin: '0 0 6px', letterSpacing: '0.05em' }}>部門の役割</p>
-                  <p style={{ fontSize: 13, color: hasRole ? '#1e293b' : '#94a3b8', margin: 0, lineHeight: 1.6 }}>
+                <div className="mb-4 p-4 bg-slate-50 rounded-lg border-l-4 border-blue-500">
+                  <p className="text-xs font-semibold text-blue-600 mb-1">部門の役割</p>
+                  <p className={`text-sm leading-relaxed ${hasRole ? 'text-slate-800' : 'text-slate-400'}`}>
                     {hasRole ? dept.role_description : '未設定（初期設定の組織図ステップで業務分掌PDFを読み込むと反映されます）'}
                   </p>
                 </div>
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>業務分掌</p>
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">業務分掌</p>
                   {hasResp ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <div className="flex flex-wrap gap-2">
                       {dept.responsibilities!.map((r, i) => (
-                        <span key={i} style={{ fontSize: 12, background: '#eff6ff', color: '#3b82f6', padding: '4px 10px', borderRadius: 6, border: '1px solid #bfdbfe' }}>{r}</span>
+                        <span key={i} className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-lg border border-blue-200">{r}</span>
                       ))}
                     </div>
                   ) : (
-                    <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>未設定（初期設定の組織図ステップで業務分掌PDFを読み込むと反映されます）</p>
+                    <p className="text-sm text-slate-400">未設定（初期設定の組織図ステップで業務分掌PDFを読み込むと反映されます）</p>
                   )}
                 </div>
               </>
@@ -414,17 +398,15 @@ export default function DepartmentProfilePage() {
           })()}
 
           {/* Editable description (additional notes) */}
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', margin: '0 0 8px' }}>部門メモ（自由記述）</p>
+          <p className="text-sm font-semibold text-slate-700 mb-2">部門メモ（自由記述）</p>
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="部門の補足情報や特記事項を入力してください..."
             rows={4}
           />
-          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={handleSaveDescription} disabled={savingDescription}>
-              {savingDescription ? '保存中...' : '保存'}
-            </Button>
+          <div className="mt-3 flex justify-end">
+            <Button onClick={handleSaveDescription} loading={savingDescription}>保存</Button>
           </div>
         </div>
       </Card>
