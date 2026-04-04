@@ -109,26 +109,50 @@ export default function DepartmentProfilePage() {
     const fetchData = async () => {
       setLoading(true)
 
-      const [profileRes, membersRes] = await Promise.all([
-        supabase
+      // Fetch profile (may not exist yet - table created by migration 011)
+      let profileData = null
+      try {
+        const profileRes = await supabase
           .from('department_profiles')
           .select('*')
           .eq('project_id', projectId)
           .eq('department_id', deptId)
-          .maybeSingle(),
-        supabase
-          .from('project_members')
-          .select('*, user_profile:user_profiles(*)')
-          .eq('project_id', projectId)
-          .eq('department_id', deptId),
-      ])
+          .maybeSingle()
+        if (profileRes.data) profileData = profileRes.data
+      } catch { /* table may not exist yet */ }
+
+      // Fetch members for this department, then fetch their profiles separately
+      const membersRes = await supabase
+        .from('project_members')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('department_id', deptId)
+
+      // Fetch user profiles for these members
+      const memberUserIds = (membersRes.data || []).map((m: { user_id: string }) => m.user_id)
+      let profilesMap: Record<string, UserProfile> = {}
+      if (memberUserIds.length > 0) {
+        const { data: userProfiles } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .in('id', memberUserIds)
+        if (userProfiles) {
+          profilesMap = Object.fromEntries(userProfiles.map((p: UserProfile) => [p.id, p]))
+        }
+      }
+
+      const [profileRes, _] = [{ data: profileData }, membersRes]
 
       if (profileRes.data) {
         setProfile(profileRes.data as DepartmentProfile)
         setDescription(profileRes.data.description || '')
       }
       if (membersRes.data) {
-        setMembers(membersRes.data as (ProjectMember & { user_profile?: UserProfile })[])
+        const enriched = (membersRes.data as ProjectMember[]).map(m => ({
+          ...m,
+          user_profile: profilesMap[m.user_id] || undefined,
+        }))
+        setMembers(enriched)
       }
 
       setLoading(false)
@@ -145,9 +169,9 @@ export default function DepartmentProfilePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          project_id: projectId,
-          department_id: deptId,
-          description,
+          projectId,
+          departmentId: deptId,
+          profile: { description },
         }),
       })
       if (!res.ok) throw new Error('保存に失敗しました')
@@ -219,9 +243,7 @@ export default function DepartmentProfilePage() {
         extraction.initiatives?.filter((i) => i.status === 'achieved').length ?? 0
       const totalCount = extraction.initiatives?.length ?? 0
 
-      const payload: Record<string, unknown> = {
-        project_id: projectId,
-        department_id: deptId,
+      const profileData = {
         description: extraction.department_overview || description,
         strengths: extraction.strengths,
         challenges: extraction.challenges,
@@ -247,7 +269,7 @@ export default function DepartmentProfilePage() {
       const res = await fetch('/api/save-dept-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ projectId, departmentId: deptId, profile: profileData }),
       })
       if (!res.ok) throw new Error('保存に失敗しました')
 
