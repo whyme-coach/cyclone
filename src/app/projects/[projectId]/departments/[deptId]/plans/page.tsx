@@ -35,6 +35,7 @@ interface DraftActionItem {
   title: string
   description: string
   deliverable: string
+  duration_weeks: number
   start_date: string
   end_date: string
 }
@@ -79,6 +80,7 @@ export default function ActionPlansPage() {
   const [userInput, setUserInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [draftItems, setDraftItems] = useState<DraftActionItem[]>([])
+  const [aiAdvice, setAiAdvice] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Step 4 state
@@ -137,15 +139,24 @@ export default function ActionPlansPage() {
     setExistingPlanForKpi(existing)
     if (existing) {
       // Already has a plan - go to Step 3 to view/edit
-      const items: DraftActionItem[] = existing.action_items.map(ai => ({
-        id: ai.id,
-        title: ai.title,
-        description: ai.description || '',
-        deliverable: ai.deliverable || '',
-        start_date: ai.start_date,
-        end_date: ai.end_date,
-      }))
+      const items: DraftActionItem[] = existing.action_items.map(ai => {
+        // Calculate duration from dates
+        const start = new Date(ai.start_date)
+        const end = new Date(ai.end_date)
+        const diffDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)))
+        const durationWeeks = Math.max(1, Math.round(diffDays / 7))
+        return {
+          id: ai.id,
+          title: ai.title,
+          description: ai.description || '',
+          deliverable: ai.deliverable || '',
+          duration_weeks: durationWeeks,
+          start_date: ai.start_date,
+          end_date: ai.end_date,
+        }
+      })
       setDraftItems(items)
+      if (existing.ai_advice) setAiAdvice(existing.ai_advice)
       setStep(3)
     } else {
       // No plan yet - start coaching
@@ -250,18 +261,26 @@ export default function ActionPlansPage() {
   }, [step, selectedKpi])
 
   const checkForActionItems = (aiData: unknown) => {
-    const parsed = parseAIJsonResponse(aiData) as { ready?: boolean; action_items?: Array<{ title: string; description?: string; deliverable?: string; start_date?: string; end_date?: string }> } | null
+    const parsed = parseAIJsonResponse(aiData) as {
+      ready?: boolean
+      advice?: string
+      action_items?: Array<{
+        title: string; description?: string; deliverable?: string
+        duration_weeks?: number; start_date?: string; end_date?: string
+      }>
+    } | null
     if (parsed?.ready && parsed.action_items) {
-      const fiscalYear = project?.fiscal_year || new Date().getFullYear()
       const items: DraftActionItem[] = parsed.action_items.map((item, i) => ({
         id: `draft-${i}`,
         title: item.title,
         description: item.description || '',
         deliverable: item.deliverable || '',
-        start_date: item.start_date || `${fiscalYear}-04-07`,
-        end_date: item.end_date || `${fiscalYear}-05-02`,
+        duration_weeks: item.duration_weeks || 2,
+        start_date: item.start_date || '',
+        end_date: item.end_date || '',
       }))
       setDraftItems(items)
+      if (parsed.advice) setAiAdvice(parsed.advice)
       setStep(3)
     }
   }
@@ -354,7 +373,6 @@ export default function ActionPlansPage() {
   }
 
   const handleAddDraftItem = () => {
-    const fiscalYear = project?.fiscal_year || new Date().getFullYear()
     setDraftItems(prev => [
       ...prev,
       {
@@ -362,8 +380,9 @@ export default function ActionPlansPage() {
         title: '',
         description: '',
         deliverable: '',
-        start_date: `${fiscalYear}-04-07`,
-        end_date: `${fiscalYear}-05-02`,
+        duration_weeks: 2,
+        start_date: '',
+        end_date: '',
       },
     ])
   }
@@ -404,6 +423,7 @@ export default function ActionPlansPage() {
           items: draftItems,
           existingPlanId: existingPlanForKpi?.id || null,
           woopSummary: summaryData || existingPlanForKpi?.woop_summary || null,
+          aiAdvice: aiAdvice || existingPlanForKpi?.ai_advice || null,
         }),
       })
       if (!res.ok) throw new Error('Save failed')
@@ -583,6 +603,7 @@ export default function ActionPlansPage() {
           isUpdate={!!existingPlanForKpi}
           messages={messages}
           savedWoopSummary={existingPlanForKpi?.woop_summary as { wish?: string; obstacle?: string; plan?: string } | undefined}
+          aiAdvice={aiAdvice || existingPlanForKpi?.ai_advice || ''}
           onUpdateItem={handleUpdateDraftItem}
           onAddItem={handleAddDraftItem}
           onRemoveItem={handleRemoveDraftItem}
@@ -591,6 +612,7 @@ export default function ActionPlansPage() {
           onRecoach={() => {
             setMessages([])
             setDraftItems([])
+            setAiAdvice('')
             setStep(2)
           }}
           onBack={() => {
@@ -1012,6 +1034,7 @@ function Step3EditItems({
   isUpdate,
   messages,
   savedWoopSummary,
+  aiAdvice,
   onUpdateItem,
   onAddItem,
   onRemoveItem,
@@ -1025,6 +1048,7 @@ function Step3EditItems({
   isUpdate: boolean
   messages: ChatMessage[]
   savedWoopSummary?: { wish?: string; obstacle?: string; plan?: string }
+  aiAdvice: string
   onUpdateItem: (id: string, updates: Partial<DraftActionItem>) => void
   onAddItem: () => void
   onRemoveItem: (id: string) => void
@@ -1063,14 +1087,12 @@ function Step3EditItems({
             <p className="text-sm font-semibold text-slate-900">{kpi.name}</p>
           </div>
           <div className="flex gap-2">
-            {!isUpdate && (
-              <Button variant="secondary" size="sm" onClick={onRecoach}>
-                <span className="flex items-center gap-1">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-                  コーチングやり直し
-                </span>
-              </Button>
-            )}
+            <Button variant="secondary" size="sm" onClick={onRecoach}>
+              <span className="flex items-center gap-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                コーチングやり直し
+              </span>
+            </Button>
             <Button variant="secondary" size="sm" onClick={onBack}>戻る</Button>
           </div>
         </div>
@@ -1110,11 +1132,12 @@ function Step3EditItems({
                 <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 32 }}></th>
                 <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', width: 36 }}>#</th>
                 <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 200 }}>アクション</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 140 }}>成果物</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 120 }}>開始日</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 80 }}>開始週</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 120 }}>完了日</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 80 }}>完了週</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', minWidth: 120 }}>成果物</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 70 }}>目安期間</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 110 }}>開始日</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 70 }}>開始週</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 110 }}>完了日</th>
+                <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 70 }}>完了週</th>
                 <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', width: 40 }}></th>
               </tr>
             </thead>
@@ -1180,13 +1203,22 @@ function Step3EditItems({
                       <span style={{ color: '#64748b' }}>{item.deliverable || '—'}</span>
                     )}
                   </td>
-                  {/* Start date + auto week */}
+                  {/* Duration weeks */}
+                  <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>{item.duration_weeks}週</span>
+                  </td>
+                  {/* Start date + auto week + auto-calculate end_date */}
                   <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top' }}>
                     <input
                       type="date"
-                      style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 6, outline: 'none', width: 110 }}
+                      style={{ padding: '4px 6px', fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 6, outline: 'none', width: 105 }}
                       value={item.start_date}
-                      onChange={e => onUpdateItem(item.id, { start_date: e.target.value })}
+                      onChange={e => {
+                        const newStart = e.target.value
+                        const endDate = new Date(newStart)
+                        endDate.setDate(endDate.getDate() + (item.duration_weeks * 7) - 1)
+                        onUpdateItem(item.id, { start_date: newStart, end_date: endDate.toISOString().split('T')[0] })
+                      }}
                       onClick={e => e.stopPropagation()}
                     />
                   </td>
@@ -1228,6 +1260,21 @@ function Step3EditItems({
           </div>
         )}
       </Card>
+
+      {/* AI Advice */}
+      {aiAdvice && (
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mt-0.5">
+              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-700 mb-1">AIからのアドバイス</p>
+              <p className="text-sm text-slate-600 leading-relaxed">{aiAdvice}</p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="flex items-center justify-between">
         <Button variant="secondary" onClick={onAddItem}>

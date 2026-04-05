@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
-  const { projectId, departmentId, kpiId, title, fiscalYear, items, existingPlanId, woopSummary } = body
+  const { projectId, departmentId, kpiId, title, fiscalYear, items, existingPlanId, woopSummary, aiAdvice } = body
   if (!projectId || !departmentId || !items) {
     return NextResponse.json({ error: 'Missing data' }, { status: 400 })
   }
@@ -27,8 +27,11 @@ export async function POST(req: Request) {
       // Update: delete old items first, update woop_summary if provided
       const { error: delErr } = await admin.from('action_items').delete().eq('action_plan_id', existingPlanId)
       if (delErr) console.error('Delete items error:', delErr)
-      if (woopSummary) {
-        await admin.from('action_plans').update({ woop_summary: woopSummary }).eq('id', existingPlanId)
+      const updateData: Record<string, unknown> = {}
+      if (woopSummary) updateData.woop_summary = woopSummary
+      if (aiAdvice) updateData.ai_advice = aiAdvice
+      if (Object.keys(updateData).length > 0) {
+        await admin.from('action_plans').update(updateData).eq('id', existingPlanId)
       }
     } else {
       // Create new plan
@@ -42,6 +45,7 @@ export async function POST(req: Request) {
       }
       if (kpiId) insertData.kpi_id = kpiId
       if (woopSummary) insertData.woop_summary = woopSummary
+      if (aiAdvice) insertData.ai_advice = aiAdvice
 
       const { data: planData, error: planError } = await admin.from('action_plans').insert(insertData).select('id').single()
 
