@@ -289,9 +289,12 @@ export interface ProgressReport {
   report_period_start?: string
   report_period_end?: string
   status: ProgressStatus
+  planned_actions?: string
   activities_completed?: string
   reflections?: string
+  challenges?: string
   next_actions?: string
+  next_action_deadline?: string
   kpi_value?: number
   submitted_at?: string
   is_draft: boolean
@@ -326,6 +329,36 @@ export interface MonthlyReport {
   finalized_by?: string
   created_at: string
   updated_at: string
+}
+
+// ============================================================
+// Timeline
+// ============================================================
+
+export interface TimelinePost {
+  id: string
+  project_id: string
+  department_id?: string
+  user_id: string
+  post_type: 'weekly_report' | 'monthly_report' | 'plan_change'
+  title: string
+  content?: string
+  metadata?: Record<string, unknown>
+  reference_id?: string
+  created_at: string
+  // joined
+  user_profile?: UserProfile
+  comments?: TimelineComment[]
+}
+
+export interface TimelineComment {
+  id: string
+  post_id: string
+  user_id: string
+  content: string
+  created_at: string
+  // joined
+  user_profile?: UserProfile
 }
 
 // ============================================================

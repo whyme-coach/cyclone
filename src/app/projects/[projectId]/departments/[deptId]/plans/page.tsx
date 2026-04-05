@@ -430,6 +430,21 @@ export default function ActionPlansPage() {
 
       toast(existingPlanForKpi ? 'アクションプランを更新しました' : 'アクションプランを保存しました', 'success')
 
+      // Post to timeline
+      try {
+        await fetch('/api/save-timeline-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: project.id,
+            departmentId: deptId,
+            postType: 'plan_change',
+            title: `${selectedKpi.name}のアクションプランを${existingPlanForKpi ? '更新' : '作成'}しました`,
+            content: `${draftItems.length}件のアクションアイテム`,
+          }),
+        })
+      } catch { /* ignore timeline post errors */ }
+
       // Save conversation log if we came from coaching
       await saveConversationLog()
 
