@@ -57,15 +57,28 @@ export async function POST(req: Request) {
     }
 
     // Insert action items
+    const fy = fiscalYear || new Date().getFullYear()
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
+      // Ensure valid dates - fallback to fiscal year start if empty
+      const startDate = item.start_date && item.start_date.length >= 10 ? item.start_date : `${fy}-04-07`
+      const durationWeeks = item.duration_weeks || 2
+      let endDate = item.end_date && item.end_date.length >= 10 ? item.end_date : ''
+      // If end_date is empty but start_date exists, calculate from duration
+      if (!endDate && startDate) {
+        const d = new Date(startDate)
+        d.setDate(d.getDate() + durationWeeks * 7 - 1)
+        endDate = d.toISOString().split('T')[0]
+      }
+      if (!endDate) endDate = startDate
+
       const { error: itemError } = await admin.from('action_items').insert({
         action_plan_id: planId,
         title: item.title,
         description: item.description || '',
         deliverable: item.deliverable || '',
-        start_date: item.start_date,
-        end_date: item.end_date,
+        start_date: startDate,
+        end_date: endDate,
         sort_order: i,
         status: 'not_started',
         progress_percent: 0,
