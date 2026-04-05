@@ -1321,6 +1321,8 @@ function Step4GanttChart({
   onBack: () => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const headerScrollRef = useRef<HTMLDivElement>(null)
+  const bodyScrollRef = useRef<HTMLDivElement>(null)
 
   // Fiscal year: April of fiscalYear to March of fiscalYear+1
   const fyStart = useMemo(() => new Date(fiscalYear, 3, 1), [fiscalYear]) // April 1
@@ -1428,8 +1430,12 @@ function Step4GanttChart({
 
   // Scroll to today on mount
   useEffect(() => {
-    if (scrollRef.current && todayWeekIndex >= 0) {
-      scrollRef.current.scrollLeft = Math.max(0, todayWeekIndex * WEEK_WIDTH - 200)
+    const scrollTo = Math.max(0, todayWeekIndex * WEEK_WIDTH - 200)
+    if (bodyScrollRef.current && todayWeekIndex >= 0) {
+      bodyScrollRef.current.scrollLeft = scrollTo
+    }
+    if (headerScrollRef.current && todayWeekIndex >= 0) {
+      headerScrollRef.current.scrollLeft = scrollTo
     }
   }, [todayWeekIndex])
 
@@ -1464,75 +1470,22 @@ function Step4GanttChart({
       </div>
 
       <Card padding={false}>
-        <div style={{ display: 'flex', overflow: 'hidden', borderRadius: '12px' }}>
-          {/* Left panel: sticky task list */}
-          <div style={{
-            width: `${LEFT_PANEL_WIDTH}px`,
-            minWidth: `${LEFT_PANEL_WIDTH}px`,
-            borderRight: '2px solid #e2e8f0',
-            backgroundColor: '#fff',
-            zIndex: 10,
-          }}>
+        <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
+          {/* ===== Sticky Header Row ===== */}
+          <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', backgroundColor: '#fff', position: 'sticky', top: 0, zIndex: 20 }}>
             {/* Left header */}
-            <div style={{ height: '56px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'flex-end' }}>
+            <div style={{ width: `${LEFT_PANEL_WIDTH}px`, minWidth: `${LEFT_PANEL_WIDTH}px`, borderRight: '2px solid #e2e8f0', height: '56px', display: 'flex', alignItems: 'flex-end', backgroundColor: '#fff' }}>
               <span style={{ width: 240, padding: '8px 16px' }} className="text-xs font-semibold text-slate-500">タスク</span>
               <span style={{ width: 100, padding: '8px 8px' }} className="text-xs font-semibold text-slate-500">責任者</span>
               <span style={{ width: 100, padding: '8px 8px' }} className="text-xs font-semibold text-slate-500">実行者</span>
             </div>
-            {/* Left rows */}
-            {groupedTasks.map(([kpiName, items]) => (
-              <div key={kpiName}>
-                {/* Group header */}
-                <div style={{
-                  height: `${ROW_HEIGHT}px`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '0 16px',
-                  backgroundColor: '#f8fafc',
-                  borderBottom: '1px solid #f1f5f9',
-                }}>
-                  <span className="text-xs font-semibold text-slate-700 truncate">{kpiName}</span>
-                </div>
-                {/* Task rows */}
-                {items.map(task => (
-                  <div key={task.id} style={{
-                    height: `${ROW_HEIGHT}px`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    borderBottom: '1px solid #f8fafc',
-                  }}>
-                    <div style={{ width: 240, padding: '0 16px 0 28px', minWidth: 0 }}>
-                      <p className="text-xs text-slate-700 truncate">{task.title}</p>
-                    </div>
-                    <div style={{ width: 100, padding: '0 8px' }}>
-                      <span className="text-xs text-slate-500 truncate block">{task.responsible_user_name || '-'}</span>
-                    </div>
-                    <div style={{ width: 100, padding: '0 8px' }}>
-                      <span className="text-xs text-slate-500 truncate block">{task.executor_user_name || '-'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-
-          {/* Right panel: scrollable timeline */}
-          <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden' }}>
-            <div style={{ width: `${timelineWidth}px`, minWidth: '100%' }}>
-              {/* Month + Week header */}
-              <div style={{ height: '56px', borderBottom: '1px solid #e2e8f0' }}>
+            {/* Right header (month + week) */}
+            <div ref={headerScrollRef} style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ width: `${timelineWidth}px` }}>
                 {/* Month row */}
                 <div style={{ display: 'flex', height: '28px' }}>
                   {monthHeaders.map((mh, i) => (
-                    <div key={i} style={{
-                      width: `${mh.spanWeeks * WEEK_WIDTH}px`,
-                      textAlign: 'center',
-                      borderRight: '1px solid #e2e8f0',
-                      borderBottom: '1px solid #f1f5f9',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
+                    <div key={i} style={{ width: `${mh.spanWeeks * WEEK_WIDTH}px`, textAlign: 'center', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <span className="text-xs font-medium text-slate-600">{mh.label}</span>
                     </div>
                   ))}
@@ -1540,63 +1493,67 @@ function Step4GanttChart({
                 {/* Week row */}
                 <div style={{ display: 'flex', height: '28px' }}>
                   {weeks.map((w, i) => (
-                    <div key={i} style={{
-                      width: `${WEEK_WIDTH}px`,
-                      textAlign: 'center',
-                      borderRight: '1px solid #f1f5f9',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
+                    <div key={i} style={{ width: `${WEEK_WIDTH}px`, textAlign: 'center', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <span className="text-[10px] text-slate-400">{w.label}</span>
                     </div>
                   ))}
                 </div>
               </div>
+            </div>
+          </div>
 
-              {/* Timeline rows */}
-              <div style={{ position: 'relative' }}>
+          {/* ===== Scrollable Body ===== */}
+          <div style={{ maxHeight: '60vh', overflowY: 'auto', display: 'flex' }}>
+            {/* Left panel: task list */}
+            <div style={{ width: `${LEFT_PANEL_WIDTH}px`, minWidth: `${LEFT_PANEL_WIDTH}px`, borderRight: '2px solid #e2e8f0', backgroundColor: '#fff', zIndex: 10 }}>
+              {groupedTasks.map(([kpiName, items]) => (
+                <div key={kpiName}>
+                  <div style={{ height: `${ROW_HEIGHT}px`, display: 'flex', alignItems: 'center', padding: '0 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                    <span className="text-xs font-semibold text-slate-700 truncate">{kpiName}</span>
+                  </div>
+                  {items.map(task => (
+                    <div key={task.id} style={{ height: `${ROW_HEIGHT}px`, display: 'flex', alignItems: 'center', borderBottom: '1px solid #f8fafc' }}>
+                      <div style={{ width: 240, padding: '0 16px 0 28px', minWidth: 0 }}>
+                        <p className="text-xs text-slate-700 truncate">{task.title}</p>
+                      </div>
+                      <div style={{ width: 100, padding: '0 8px' }}>
+                        <span className="text-xs text-slate-500 truncate block">{task.responsible_user_name || '-'}</span>
+                      </div>
+                      <div style={{ width: 100, padding: '0 8px' }}>
+                        <span className="text-xs text-slate-500 truncate block">{task.executor_user_name || '-'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {/* Right panel: timeline bars */}
+            <div
+              ref={bodyScrollRef}
+              style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden' }}
+              onScroll={(e) => {
+                // Sync header horizontal scroll with body
+                if (headerScrollRef.current) {
+                  headerScrollRef.current.scrollLeft = (e.target as HTMLElement).scrollLeft
+                }
+              }}
+            >
+              <div style={{ width: `${timelineWidth}px`, minWidth: '100%', position: 'relative' }}>
                 {/* Today marker */}
                 {todayWeekIndex >= 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    left: `${todayWeekIndex * WEEK_WIDTH + WEEK_WIDTH / 2}px`,
-                    top: 0,
-                    bottom: 0,
-                    width: '2px',
-                    backgroundColor: '#ef4444',
-                    zIndex: 5,
-                    height: `${totalRows * ROW_HEIGHT}px`,
-                  }} />
+                  <div style={{ position: 'absolute', left: `${todayWeekIndex * WEEK_WIDTH + WEEK_WIDTH / 2}px`, top: 0, width: '2px', backgroundColor: '#ef4444', zIndex: 5, height: `${totalRows * ROW_HEIGHT}px` }} />
                 )}
-
                 {/* Week gridlines */}
                 {weeks.map((_, i) => (
-                  <div key={i} style={{
-                    position: 'absolute',
-                    left: `${i * WEEK_WIDTH}px`,
-                    top: 0,
-                    width: '1px',
-                    backgroundColor: '#f1f5f9',
-                    height: `${totalRows * ROW_HEIGHT}px`,
-                  }} />
+                  <div key={i} style={{ position: 'absolute', left: `${i * WEEK_WIDTH}px`, top: 0, width: '1px', backgroundColor: '#f1f5f9', height: `${totalRows * ROW_HEIGHT}px` }} />
                 ))}
 
                 {groupedTasks.map(([kpiName, items]) => (
                   <div key={kpiName}>
-                    {/* Group header row (empty in timeline) */}
-                    <div style={{
-                      height: `${ROW_HEIGHT}px`,
-                      backgroundColor: '#f8fafc',
-                      borderBottom: '1px solid #f1f5f9',
-                    }} />
-                    {/* Task bars */}
+                    <div style={{ height: `${ROW_HEIGHT}px`, backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }} />
                     {items.map(task => (
-                      <div key={task.id} style={{
-                        height: `${ROW_HEIGHT}px`,
-                        position: 'relative',
-                        borderBottom: '1px solid #f8fafc',
-                      }}>
+                      <div key={task.id} style={{ height: `${ROW_HEIGHT}px`, position: 'relative', borderBottom: '1px solid #f8fafc' }}>
                         <div
                           style={{ ...getBarStyle(task), cursor: 'grab' }}
                           onDoubleClick={(e) => { e.stopPropagation(); onEditTask(task) }}
@@ -1622,7 +1579,6 @@ function Step4GanttChart({
                                 newEnd.setDate(newEnd.getDate() + weekShift * 7)
                                 onUpdateTaskDates(task.id, newStart.toISOString().split('T')[0], newEnd.toISOString().split('T')[0])
                               } else {
-                                // Reset position if no shift
                                 if (bar) bar.style.left = `${origLeft}px`
                               }
                               setDragging(null)
@@ -1632,17 +1588,7 @@ function Step4GanttChart({
                           }}
                           title={`${task.title} (${ACTION_ITEM_STATUS_LABELS[task.status]}) - ドラッグで移動 / ダブルクリックで編集`}
                         >
-                          <span style={{
-                            fontSize: '10px',
-                            color: '#fff',
-                            paddingLeft: '6px',
-                            lineHeight: '24px',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            display: 'block',
-                            pointerEvents: 'none',
-                          }}>
+                          <span style={{ fontSize: '10px', color: '#fff', paddingLeft: '6px', lineHeight: '24px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', pointerEvents: 'none' }}>
                             {task.title}
                           </span>
                         </div>
