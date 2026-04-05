@@ -125,6 +125,7 @@ export default function ReportsPage() {
   // ---- Weekly state ----
   const [actionItems, setActionItems] = useState<GanttActionItem[]>([])
   const [selectedItem, setSelectedItem] = useState<GanttActionItem | null>(null)
+  const [weeklySubStep, setWeeklySubStep] = useState<'gantt' | 'form'>('gantt')
   const [reportMode, setReportMode] = useState<ReportMode>('form')
 
   // Form fields
@@ -415,6 +416,7 @@ export default function ReportsPage() {
 
       toast('週次報告をタイムラインに投稿しました', 'success')
       clearForm()
+      setWeeklySubStep('gantt')
       fetchActionItems()
     } catch {
       toast('報告の保存に失敗しました', 'error')
@@ -734,13 +736,13 @@ export default function ReportsPage() {
       {/* ================================================================
           TAB 1: Weekly Report
           ================================================================ */}
-      {activeTab === 'weekly' && (
+      {activeTab === 'weekly' && weeklySubStep === 'gantt' && (
         <div className="space-y-6">
           {/* Mini Gantt grouped by KPI */}
           <Card padding={false}>
             <div className="p-4 pb-2">
               <CardTitle>アクションアイテム一覧</CardTitle>
-              <p className="text-xs text-slate-400 mt-1">クリックしてアクションアイテムを選択し、報告を作成します</p>
+              <p className="text-xs text-slate-400 mt-1">ダブルクリックで報告画面に移動します</p>
             </div>
             {loading ? (
               <div className="flex justify-center py-8"><Spinner /></div>
@@ -786,7 +788,8 @@ export default function ReportsPage() {
                           return (
                             <div
                               key={item.id}
-                              onClick={() => selectActionItem(item)}
+                              onClick={() => setSelectedItem(item)}
+                              onDoubleClick={() => { selectActionItem(item); setWeeklySubStep('form') }}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -825,22 +828,31 @@ export default function ReportsPage() {
               )
             })()}
           </Card>
+        </div>
+      )}
 
-          {/* Report form (shown when item is selected) */}
-          {selectedItem && (
-            <Card>
-              {/* Item header */}
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <CardTitle>{selectedItem.title}</CardTitle>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {selectedItem.planTitle} / {formatDate(selectedItem.start_date)} 〜 {formatDate(selectedItem.end_date)}
-                  </p>
-                </div>
+      {activeTab === 'weekly' && weeklySubStep === 'form' && selectedItem && (
+        <div className="space-y-6">
+          {/* Back to Gantt */}
+          <Card className="bg-blue-50 border-blue-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-blue-600 font-medium">週次報告</p>
+                <p className="text-sm font-semibold text-slate-900">{selectedItem.title}</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {selectedItem.planTitle} / {formatDate(selectedItem.start_date)} 〜 {formatDate(selectedItem.end_date)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
                 <Badge variant={STATUS_BADGE[selectedItem.status]?.variant || 'default'}>
                   {STATUS_BADGE[selectedItem.status]?.label || selectedItem.status}
                 </Badge>
+                <Button variant="secondary" size="sm" onClick={() => { setWeeklySubStep('gantt'); setReportMode('form'); setMessages([]); setUserInput(''); setCoachDone(false) }}>戻る</Button>
               </div>
+            </div>
+          </Card>
+
+          <Card>
 
               {/* Mode toggle */}
               <div className="flex gap-2 mb-6">
@@ -989,7 +1001,6 @@ export default function ReportsPage() {
                 </div>
               )}
             </Card>
-          )}
         </div>
       )}
 
