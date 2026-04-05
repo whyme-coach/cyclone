@@ -1599,7 +1599,7 @@ function Step4GanttChart({
                       }}>
                         <div
                           style={{ ...getBarStyle(task), cursor: 'grab' }}
-                          onClick={(e) => { if (!dragging) onEditTask(task) ; e.stopPropagation() }}
+                          onDoubleClick={(e) => { e.stopPropagation(); onEditTask(task) }}
                           onMouseDown={(e) => {
                             e.preventDefault()
                             const bar = e.currentTarget as HTMLElement
@@ -1630,7 +1630,7 @@ function Step4GanttChart({
                             document.addEventListener('mousemove', handleMouseMove)
                             document.addEventListener('mouseup', handleMouseUp)
                           }}
-                          title={`${task.title} (${ACTION_ITEM_STATUS_LABELS[task.status]}) - ドラッグで移動`}
+                          title={`${task.title} (${ACTION_ITEM_STATUS_LABELS[task.status]}) - ドラッグで移動 / ダブルクリックで編集`}
                         >
                           <span style={{
                             fontSize: '10px',
