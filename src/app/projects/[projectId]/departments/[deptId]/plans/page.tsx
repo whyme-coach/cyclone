@@ -1602,23 +1602,18 @@ function Step4GanttChart({
                           onClick={(e) => { if (!dragging) onEditTask(task) ; e.stopPropagation() }}
                           onMouseDown={(e) => {
                             e.preventDefault()
-                            setDragging({ taskId: task.id, startX: e.clientX, origStart: task.start_date, origEnd: task.end_date })
+                            const bar = e.currentTarget as HTMLElement
+                            const startX = e.clientX
+                            const origLeft = parseInt(bar.style.left) || 0
+                            setDragging({ taskId: task.id, startX, origStart: task.start_date, origEnd: task.end_date })
                             const handleMouseMove = (ev: MouseEvent) => {
-                              const dx = ev.clientX - e.clientX
-                              const weekShift = Math.round(dx / WEEK_WIDTH)
-                              if (weekShift === 0) return
-                              const origStart = new Date(task.start_date)
-                              const origEnd = new Date(task.end_date)
-                              origStart.setDate(origStart.getDate() + weekShift * 7)
-                              origEnd.setDate(origEnd.getDate() + weekShift * 7)
-                              const bar = e.currentTarget as HTMLElement
-                              const origLeft = parseInt(bar.style.left) || 0
-                              bar.style.left = `${origLeft + dx}px`
+                              const dx = ev.clientX - startX
+                              if (bar) bar.style.left = `${origLeft + dx}px`
                             }
                             const handleMouseUp = (ev: MouseEvent) => {
                               document.removeEventListener('mousemove', handleMouseMove)
                               document.removeEventListener('mouseup', handleMouseUp)
-                              const dx = ev.clientX - e.clientX
+                              const dx = ev.clientX - startX
                               const weekShift = Math.round(dx / WEEK_WIDTH)
                               if (weekShift !== 0) {
                                 const newStart = new Date(task.start_date)
@@ -1626,6 +1621,9 @@ function Step4GanttChart({
                                 newStart.setDate(newStart.getDate() + weekShift * 7)
                                 newEnd.setDate(newEnd.getDate() + weekShift * 7)
                                 onUpdateTaskDates(task.id, newStart.toISOString().split('T')[0], newEnd.toISOString().split('T')[0])
+                              } else {
+                                // Reset position if no shift
+                                if (bar) bar.style.left = `${origLeft}px`
                               }
                               setDragging(null)
                             }
