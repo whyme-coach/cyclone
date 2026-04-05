@@ -736,68 +736,94 @@ export default function ReportsPage() {
           ================================================================ */}
       {activeTab === 'weekly' && (
         <div className="space-y-6">
-          {/* Mini Gantt */}
-          <Card>
-            <CardTitle>アクションアイテム一覧</CardTitle>
-            <p className="text-xs text-slate-400 mt-1">クリックしてアクションアイテムを選択し、報告を作成します</p>
+          {/* Mini Gantt grouped by KPI */}
+          <Card padding={false}>
+            <div className="p-4 pb-2">
+              <CardTitle>アクションアイテム一覧</CardTitle>
+              <p className="text-xs text-slate-400 mt-1">クリックしてアクションアイテムを選択し、報告を作成します</p>
+            </div>
             {loading ? (
               <div className="flex justify-center py-8"><Spinner /></div>
             ) : actionItems.length === 0 ? (
-              <EmptyState
-                title="アクションアイテムがありません"
-                description="まずアクションプランを作成してください"
-              />
-            ) : (
-              <div className="mt-4 overflow-x-auto">
-                <div className="min-w-[900px]">
-                  {/* Month header row */}
-                  <div className="flex items-center border-b border-slate-200 pb-2 mb-1">
-                    <div className="w-52 flex-shrink-0 text-xs font-medium text-slate-500 pr-2">タスク名</div>
-                    <div className="flex-1 flex">
-                      {MONTH_LABELS.map(label => (
-                        <div key={label} className="text-xs text-slate-400 text-center" style={{ width: `${100 / 12}%` }}>
-                          {label}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              <div className="p-4"><EmptyState title="アクションアイテムがありません" description="まずアクションプランを作成してください" /></div>
+            ) : (() => {
+              // Group by planTitle (KPI name)
+              const grouped = new Map<string, GanttActionItem[]>()
+              for (const item of actionItems) {
+                const list = grouped.get(item.planTitle) || []
+                list.push(item)
+                grouped.set(item.planTitle, list)
+              }
+              const groups = Array.from(grouped.entries())
 
-                  {/* Task rows */}
-                  {actionItems.map(item => {
-                    const isSelected = selectedItem?.id === item.id
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => selectActionItem(item)}
-                        className={cn(
-                          'flex items-center py-2 px-1 rounded-lg cursor-pointer transition-colors',
-                          isSelected
-                            ? 'bg-blue-50 border-2 border-blue-400'
-                            : 'hover:bg-slate-50 border-2 border-transparent'
-                        )}
-                      >
-                        <div className="w-52 flex-shrink-0 pr-2">
-                          <p className="text-sm font-medium text-slate-800 truncate">{item.title}</p>
-                          <p className="text-xs text-slate-400 truncate">{item.planTitle}</p>
-                        </div>
-                        <div className="flex-1 relative h-8">
-                          {/* Grid lines */}
-                          <div className="absolute inset-0 flex">
-                            {MONTH_LABELS.map((_, i) => (
-                              <div key={i} className="border-l border-slate-100" style={{ width: `${100 / 12}%` }} />
-                            ))}
-                          </div>
-                          {/* Bar */}
-                          <div className="absolute top-1 h-6 rounded-md opacity-90" style={getBarStyle(item)}>
-                            <div className="h-full rounded-md bg-white/30" style={{ width: `${item.progress_percent}%` }} />
-                          </div>
-                        </div>
+              return (
+                <div className="overflow-x-auto">
+                  <div style={{ minWidth: 900 }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', padding: '0 0 8px' }}>
+                      <div style={{ width: 280, minWidth: 280, padding: '0 16px' }}>
+                        <span className="text-xs font-semibold text-slate-500">タスク</span>
                       </div>
-                    )
-                  })}
+                      <div style={{ flex: 1, display: 'flex' }}>
+                        {MONTH_LABELS.map(label => (
+                          <div key={label} className="text-xs text-slate-400 text-center" style={{ width: `${100 / 12}%` }}>
+                            {label}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Grouped rows */}
+                    {groups.map(([kpiName, items]) => (
+                      <div key={kpiName}>
+                        {/* KPI group header */}
+                        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                          <span className="text-xs font-bold text-slate-700">{kpiName}</span>
+                        </div>
+                        {/* Action items */}
+                        {items.map(item => {
+                          const isSelected = selectedItem?.id === item.id
+                          return (
+                            <div
+                              key={item.id}
+                              onClick={() => selectActionItem(item)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                padding: '6px 0',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid #f8fafc',
+                                backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                                borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent',
+                                transition: 'all 0.15s',
+                              }}
+                              onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = '#f8fafc' }}
+                              onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}
+                            >
+                              <div style={{ width: 280, minWidth: 280, padding: '0 16px 0 24px' }}>
+                                <p className="text-xs font-medium text-slate-800 truncate">{item.title}</p>
+                              </div>
+                              <div style={{ flex: 1, position: 'relative', height: 28 }}>
+                                {/* Grid lines */}
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+                                  {MONTH_LABELS.map((_, i) => (
+                                    <div key={i} style={{ width: `${100 / 12}%`, borderLeft: '1px solid #f1f5f9' }} />
+                                  ))}
+                                </div>
+                                {/* Bar */}
+                                <div style={{ ...getBarStyle(item), position: 'absolute', top: 4, height: 20, borderRadius: 4, opacity: 0.9 }}>
+                                  <div style={{ height: '100%', borderRadius: 4, background: 'rgba(255,255,255,0.3)', width: `${item.progress_percent}%` }} />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </Card>
 
           {/* Report form (shown when item is selected) */}
