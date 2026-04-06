@@ -846,17 +846,23 @@ ${siblingItemsStr || '（なし）'}
   // ============================================================
 
   const getBarStyle = useCallback((item: GanttActionItem) => {
-    const totalDays = 365
     const start = new Date(item.start_date)
     const end = new Date(item.end_date)
-    // Safety: if dates are invalid, default to start of fiscal year
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return { left: '0%', width: '2%', backgroundColor: '#94a3b8' }
+      return { left: '0%', width: `${100 / 12}%`, backgroundColor: '#94a3b8' }
     }
-    const startOffset = Math.max(0, (start.getTime() - ganttStartDate.getTime()) / (1000 * 60 * 60 * 24))
-    const duration = Math.max(7, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
-    const leftPct = (startOffset / totalDays) * 100
-    const widthPct = (duration / totalDays) * 100
+    // Convert date to fiscal-year month position (0=April, 11=March)
+    const toFyMonthPos = (d: Date) => {
+      const m = d.getMonth() // 0=Jan
+      const fyMonth = m >= 3 ? m - 3 : m + 9 // 0=April, 11=March
+      const dayInMonth = d.getDate() - 1
+      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+      return fyMonth + dayInMonth / daysInMonth
+    }
+    const startPos = Math.max(0, toFyMonthPos(start))
+    const endPos = Math.min(12, toFyMonthPos(end))
+    const leftPct = (startPos / 12) * 100
+    const widthPct = Math.max(100 / 48, ((endPos - startPos) / 12) * 100) // min ~2% width
     const colors: Record<string, string> = {
       completed: '#22c55e',
       in_progress: '#3b82f6',
@@ -869,7 +875,7 @@ ${siblingItemsStr || '（なし）'}
       width: `${Math.min(widthPct, 100 - leftPct)}%`,
       backgroundColor: colors[item.status] || '#94a3b8',
     }
-  }, [ganttStartDate])
+  }, [])
 
   // ============================================================
   // Render
@@ -937,9 +943,12 @@ ${siblingItemsStr || '（なし）'}
               // Calculate today position for the red line
               const todayPct = (() => {
                 const today = new Date()
-                const fyStart = new Date(fiscalYear, 3, 1) // April 1
-                const diffDays = (today.getTime() - fyStart.getTime()) / (1000 * 60 * 60 * 24)
-                return Math.max(0, Math.min(100, (diffDays / 365) * 100))
+                const m = today.getMonth()
+                const fyMonth = m >= 3 ? m - 3 : m + 9
+                const dayInMonth = today.getDate() - 1
+                const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+                const pos = fyMonth + dayInMonth / daysInMonth
+                return Math.max(0, Math.min(100, (pos / 12) * 100))
               })()
 
               return (
