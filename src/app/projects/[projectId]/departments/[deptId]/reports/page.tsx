@@ -287,7 +287,7 @@ export default function ReportsPage() {
       const allItems: GanttActionItem[] = []
       for (const plan of data as (ActionPlan & { action_items: ActionItem[] })[]) {
         // Sort items within each plan by sort_order (same as plans page)
-        const sortedItems = [...(plan.action_items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        const sortedItems = [...(plan.action_items || [])].sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
         for (const item of sortedItems) {
           allItems.push({ ...item, planTitle: plan.title, responsible_user_name: undefined, executor_user_name: undefined })
         }

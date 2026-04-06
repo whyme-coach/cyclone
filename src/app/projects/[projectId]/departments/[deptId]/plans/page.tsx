@@ -1385,6 +1385,10 @@ function Step4GanttChart({
       group.push(task)
       map.set(task.kpi_name, group)
     }
+    // Sort items within each group by start_date ascending
+    for (const [, items] of map) {
+      items.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+    }
     return Array.from(map.entries())
   }, [tasks])
 
