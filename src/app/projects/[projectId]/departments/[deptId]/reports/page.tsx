@@ -1435,7 +1435,7 @@ ${siblingItemsStr || '（なし）'}
                               const value = line.slice(colonIdx + 1).trim()
                               return (
                                 <div key={i} className="mb-2 last:mb-0">
-                                  <span className="text-xs font-semibold text-slate-500">{label}</span>
+                                  <span className="text-xs font-bold text-blue-600">{label}</span>
                                   <p className="text-sm text-slate-800 mt-0.5">{value}</p>
                                 </div>
                               )
@@ -1455,7 +1455,7 @@ ${siblingItemsStr || '（なし）'}
                               const value = line.slice(colonIdx + 1).trim()
                               return (
                                 <div key={i} className="mb-2 last:mb-0">
-                                  <span className="text-xs font-semibold text-slate-500">{label}</span>
+                                  <span className="text-xs font-bold text-blue-600">{label}</span>
                                   <p className="text-sm text-slate-800 mt-0.5">{value}</p>
                                 </div>
                               )
