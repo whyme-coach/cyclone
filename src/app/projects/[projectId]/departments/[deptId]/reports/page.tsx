@@ -34,6 +34,8 @@ interface ChatMessage {
 
 interface GanttActionItem extends ActionItem {
   planTitle: string
+  responsible_user_name?: string
+  executor_user_name?: string
 }
 
 interface TimelinePostWithUser extends TimelinePost {
@@ -247,12 +249,33 @@ export default function ReportsPage() {
       .order('created_at')
 
     if (data) {
-      const items: GanttActionItem[] = []
+      const allItems: ActionItem[] = []
+      const planMap = new Map<string, string>()
       for (const plan of data as (ActionPlan & { action_items: ActionItem[] })[]) {
         for (const item of plan.action_items || []) {
-          items.push({ ...item, planTitle: plan.title })
+          allItems.push(item)
+          planMap.set(item.id, plan.title)
         }
       }
+
+      // Fetch user profiles for responsible/executor
+      const userIds = new Set<string>()
+      for (const item of allItems) {
+        if (item.responsible_user_id) userIds.add(item.responsible_user_id)
+        if (item.executor_user_id) userIds.add(item.executor_user_id)
+      }
+      const nameMap: Record<string, string> = {}
+      if (userIds.size > 0) {
+        const { data: profiles } = await supabase.from('user_profiles').select('id, full_name').in('id', Array.from(userIds))
+        if (profiles) for (const p of profiles) nameMap[p.id] = p.full_name || ''
+      }
+
+      const items: GanttActionItem[] = allItems.map(item => ({
+        ...item,
+        planTitle: planMap.get(item.id) || '',
+        responsible_user_name: item.responsible_user_id ? nameMap[item.responsible_user_id] : undefined,
+        executor_user_name: item.executor_user_id ? nameMap[item.executor_user_id] : undefined,
+      }))
       items.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
       setActionItems(items)
     }
@@ -911,13 +934,27 @@ ${siblingItemsStr || '（なし）'}
               }
               const groups = Array.from(grouped.entries())
 
+              // Calculate today position for the red line
+              const todayPct = (() => {
+                const today = new Date()
+                const fyStart = new Date(fiscalYear, 3, 1) // April 1
+                const diffDays = (today.getTime() - fyStart.getTime()) / (1000 * 60 * 60 * 24)
+                return Math.max(0, Math.min(100, (diffDays / 365) * 100))
+              })()
+
               return (
                 <div className="overflow-x-auto">
-                  <div style={{ minWidth: 900 }}>
+                  <div style={{ minWidth: 1100 }}>
                     {/* Header */}
                     <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', padding: '0 0 8px' }}>
-                      <div style={{ width: 280, minWidth: 280, padding: '0 16px' }}>
+                      <div style={{ width: 220, minWidth: 220, padding: '0 16px' }}>
                         <span className="text-xs font-semibold text-slate-500">タスク</span>
+                      </div>
+                      <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
+                        <span className="text-xs font-semibold text-slate-500">責任者</span>
+                      </div>
+                      <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
+                        <span className="text-xs font-semibold text-slate-500">実行者</span>
                       </div>
                       <div style={{ flex: 1, display: 'flex' }}>
                         {MONTH_LABELS.map(label => (
@@ -956,8 +993,14 @@ ${siblingItemsStr || '（なし）'}
                               onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = '#f8fafc' }}
                               onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}
                             >
-                              <div style={{ width: 280, minWidth: 280, padding: '0 16px 0 24px' }}>
+                              <div style={{ width: 220, minWidth: 220, padding: '0 16px 0 24px' }}>
                                 <p className="text-xs font-medium text-slate-800 truncate">{item.title}</p>
+                              </div>
+                              <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
+                                <span className="text-xs text-slate-500 truncate block">{item.responsible_user_name || '-'}</span>
+                              </div>
+                              <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
+                                <span className="text-xs text-slate-500 truncate block">{item.executor_user_name || '-'}</span>
                               </div>
                               <div style={{ flex: 1, position: 'relative', height: 28 }}>
                                 {/* Grid lines */}
@@ -966,6 +1009,8 @@ ${siblingItemsStr || '（なし）'}
                                     <div key={i} style={{ width: `${100 / 12}%`, borderLeft: '1px solid #f1f5f9' }} />
                                   ))}
                                 </div>
+                                {/* Today line */}
+                                <div style={{ position: 'absolute', left: `${todayPct}%`, top: 0, bottom: 0, width: 2, backgroundColor: '#ef4444', zIndex: 5 }} />
                                 {/* Bar */}
                                 <div style={{ ...getBarStyle(item), position: 'absolute', top: 4, height: 20, borderRadius: 4, opacity: 0.9 }}>
                                   <div style={{ height: '100%', borderRadius: 4, background: 'rgba(255,255,255,0.3)', width: `${item.progress_percent}%` }} />
