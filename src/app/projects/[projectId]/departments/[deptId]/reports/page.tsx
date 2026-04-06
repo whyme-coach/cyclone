@@ -468,7 +468,20 @@ export default function ReportsPage() {
     const startCoach = async () => {
       setAiLoading(true)
       try {
-        const contextMsg = `アクションアイテム「${selectedItem.title}」の週次報告を作成したいです。\n部門: ${department?.name || ''}\n計画: ${selectedItem.planTitle}\n期間: ${selectedItem.start_date} 〜 ${selectedItem.end_date}\n現在のステータス: ${STATUS_BADGE[selectedItem.status]?.label || selectedItem.status}\n進捗: ${selectedItem.progress_percent}%`
+        const comp = company as { name?: string; industry?: string } | null
+        const contextMsg = `以下のアクションアイテムについて、週次報告を作成したいです。
+
+会社名: ${comp?.name || ''}
+業種: ${comp?.industry || ''}
+部門: ${department?.name || ''}
+KPI/施策: ${selectedItem.planTitle}
+アクションアイテム: ${selectedItem.title}
+説明: ${selectedItem.description || '（なし）'}
+期間: ${selectedItem.start_date} 〜 ${selectedItem.end_date}
+現在のステータス: ${STATUS_BADGE[selectedItem.status]?.label || selectedItem.status}
+進捗: ${selectedItem.progress_percent}%
+
+よろしくお願いします。`
 
         const userMsg: ChatMessage = {
           role: 'user',
@@ -943,25 +956,25 @@ export default function ReportsPage() {
               {reportMode === 'coach' && (
                 <div className="space-y-4">
                   {/* Chat messages */}
-                  <div className="h-96 overflow-y-auto border border-slate-200 rounded-lg p-4 space-y-4 bg-slate-50">
-                    {messages.map((msg, i) => (
-                      <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-                        <div
-                          className={cn(
-                            'max-w-[80%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap',
-                            msg.role === 'user'
-                              ? 'bg-blue-600 text-white rounded-br-md'
-                              : 'bg-white text-slate-800 border border-slate-200 rounded-bl-md'
-                          )}
-                        >
-                          {msg.role === 'user' && i === 0 ? (
-                            <span className="text-blue-100 text-xs">(コンテキスト送信済み)</span>
-                          ) : (
-                            msg.content
-                          )}
+                  <div style={{ height: '50vh' }} className="overflow-y-auto border border-slate-200 rounded-lg p-4 space-y-4 bg-slate-50">
+                    {messages.map((msg, i) => {
+                      // Hide the initial context message (index 0 user message)
+                      if (msg.role === 'user' && i === 0) return null
+                      return (
+                        <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                          <div
+                            className={cn(
+                              'max-w-[80%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap',
+                              msg.role === 'user'
+                                ? 'bg-blue-600 text-white rounded-br-md'
+                                : 'bg-white text-slate-800 border border-slate-200 rounded-bl-md'
+                            )}
+                          >
+                            {msg.content}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                     {aiLoading && (
                       <div className="flex justify-start">
                         <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-bl-md">
@@ -978,23 +991,28 @@ export default function ReportsPage() {
 
                   {/* Input */}
                   {!coachDone && (
-                    <div className="flex gap-2">
-                      <Textarea
-                        placeholder="メッセージを入力..."
-                        value={userInput}
-                        onChange={e => setUserInput(e.target.value)}
-                        rows={2}
-                        className="flex-1"
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault()
-                            handleSendCoachMessage()
-                          }
-                        }}
-                      />
-                      <Button onClick={handleSendCoachMessage} disabled={aiLoading || !userInput.trim()} className="self-end">
-                        送信
-                      </Button>
+                    <div className="border-t border-slate-200 pt-4">
+                      <div className="flex gap-3 items-end">
+                        <div className="flex-1">
+                          <textarea
+                            className="w-full px-4 py-2.5 text-sm text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-slate-400 resize-none"
+                            placeholder="メッセージを入力..."
+                            value={userInput}
+                            onChange={e => setUserInput(e.target.value)}
+                            rows={2}
+                            disabled={aiLoading}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                                handleSendCoachMessage()
+                              }
+                            }}
+                          />
+                        </div>
+                        <Button onClick={handleSendCoachMessage} disabled={aiLoading || !userInput.trim()}>
+                          送信
+                        </Button>
+                      </div>
                     </div>
                   )}
                   {coachDone && (
