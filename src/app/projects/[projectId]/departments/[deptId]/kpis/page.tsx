@@ -157,7 +157,7 @@ export default function KPIsPage() {
       })
       if (!res.ok) throw new Error()
       toast('KPIツリーを保存しました', 'success')
-      localStorage.removeItem(treeStorageKey)
+      // Keep tree in localStorage so it persists across navigation
       // Refresh KPI list
       const { data } = await supabase.from('kpis').select('*').eq('project_id', project.id).eq('department_id', deptId).order('created_at')
       if (data) setKpis(data)
