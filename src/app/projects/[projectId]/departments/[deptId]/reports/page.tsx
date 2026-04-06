@@ -677,6 +677,10 @@ export default function ReportsPage() {
     const totalDays = 365
     const start = new Date(item.start_date)
     const end = new Date(item.end_date)
+    // Safety: if dates are invalid, default to start of fiscal year
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return { left: '0%', width: '2%', backgroundColor: '#94a3b8' }
+    }
     const startOffset = Math.max(0, (start.getTime() - ganttStartDate.getTime()) / (1000 * 60 * 60 * 24))
     const duration = Math.max(7, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
     const leftPct = (startOffset / totalDays) * 100
@@ -847,7 +851,7 @@ export default function ReportsPage() {
                 <Badge variant={STATUS_BADGE[selectedItem.status]?.variant || 'default'}>
                   {STATUS_BADGE[selectedItem.status]?.label || selectedItem.status}
                 </Badge>
-                <Button variant="secondary" size="sm" onClick={() => { setWeeklySubStep('gantt'); setReportMode('form'); setMessages([]); setUserInput(''); setCoachDone(false) }}>戻る</Button>
+                <Button variant="secondary" size="sm" onClick={() => { setWeeklySubStep('gantt'); setReportMode('form'); setMessages([]); setUserInput(''); setCoachDone(false); fetchActionItems() }}>戻る</Button>
               </div>
             </div>
           </Card>
