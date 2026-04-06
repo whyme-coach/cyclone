@@ -18,20 +18,24 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
 
   try {
-    const { data, error } = await admin.from('progress_reports').insert({
+    // Build insert data - core fields from original schema
+    const insertData: Record<string, unknown> = {
       project_id: projectId,
       action_item_id: actionItemId,
       reporter_user_id: user.id,
       status: report.status || 'on_track',
-      planned_actions: report.planned_actions || null,
       activities_completed: report.activities_completed || null,
       reflections: report.reflections || null,
-      challenges: report.challenges || null,
       next_actions: report.next_actions || null,
-      next_action_deadline: report.next_action_deadline || null,
       submitted_at: new Date().toISOString(),
       is_draft: false,
-    }).select('id').single()
+    }
+    // New fields from migration 013 - include if provided
+    if (report.planned_actions) insertData.planned_actions = report.planned_actions
+    if (report.challenges) insertData.challenges = report.challenges
+    if (report.next_action_deadline) insertData.next_action_deadline = report.next_action_deadline
+
+    const { data, error } = await admin.from('progress_reports').insert(insertData).select('id').single()
 
     if (error) {
       console.error('Save progress report error:', error)
