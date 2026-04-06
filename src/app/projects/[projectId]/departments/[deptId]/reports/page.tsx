@@ -70,6 +70,51 @@ const POST_TYPE_BADGE: Record<string, { label: string; variant: 'info' | 'succes
 }
 
 // ============================================================
+// OSKAR Phase
+// ============================================================
+
+const OSKAR_STEPS = [
+  { key: 'outcome', label: 'Outcome', sub: '成果の確認', color: '#3b82f6' },
+  { key: 'scaling', label: 'Scaling', sub: 'スケーリング', color: '#8b5cf6' },
+  { key: 'knowhow', label: 'Know-how', sub: 'リソース', color: '#f59e0b' },
+  { key: 'action', label: 'Action', sub: '肯定と行動', color: '#10b981' },
+  { key: 'review', label: 'Review', sub: '振り返り', color: '#ef4444' },
+] as const
+
+function detectOskarPhase(messages: ChatMessage[]): number {
+  const assistantMsgs = messages.filter(m => m.role === 'assistant')
+  if (assistantMsgs.length === 0) return 0
+  for (let i = assistantMsgs.length - 1; i >= 0; i--) {
+    const content = assistantMsgs[i].content
+    const match = content.match(/\[OSKAR:(outcome|scaling|knowhow|action|review)\]/i)
+    if (match) {
+      const phase = match[1].toLowerCase()
+      if (phase === 'review') return 4
+      if (phase === 'action') return 3
+      if (phase === 'knowhow') return 2
+      if (phase === 'scaling') return 1
+      return 0
+    }
+  }
+  const userRounds = messages.filter(m => m.role === 'user').length - 1
+  if (userRounds <= 1) return 0
+  if (userRounds <= 2) return 1
+  if (userRounds <= 3) return 2
+  if (userRounds <= 4) return 3
+  return 4
+}
+
+function extractSuggestions(content: string): string[] {
+  const matches = content.match(/\[SUGGEST:([^\]]+)\]/g)
+  if (!matches) return []
+  return matches.map(m => m.replace(/^\[SUGGEST:/, '').replace(/\]$/, '').trim()).filter(s => s.length > 0)
+}
+
+function stripTags(content: string): string {
+  return content.replace(/\[OSKAR:[^\]]*\]/gi, '').replace(/\[SUGGEST:[^\]]*\]/gi, '').trim()
+}
+
+// ============================================================
 // Helpers
 // ============================================================
 
@@ -1015,14 +1060,57 @@ ${siblingItemsStr || '（なし）'}
                 </div>
               )}
 
-              {/* ---------- Coach Mode ---------- */}
-              {reportMode === 'coach' && (
+              {/* ---------- Coach Mode (OSKAR) ---------- */}
+              {reportMode === 'coach' && (() => {
+                const oskarPhase = detectOskarPhase(messages)
+                const lastAiMsg = [...messages].reverse().find(m => m.role === 'assistant')
+                const suggestions = lastAiMsg ? extractSuggestions(lastAiMsg.content) : []
+                const lastIsAi = messages.length > 0 && messages[messages.length - 1]?.role === 'assistant'
+                const showSuggestions = lastIsAi && !userInput.trim() && !aiLoading && suggestions.length > 0
+
+                return (
                 <div className="space-y-4">
+                  {/* OSKAR Indicator */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-center gap-0">
+                      {OSKAR_STEPS.map((step, i) => (
+                        <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                            <div style={{
+                              width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: i < oskarPhase ? step.color : i === oskarPhase ? '#fff' : '#f1f5f9',
+                              border: i === oskarPhase ? `2.5px solid ${step.color}` : i < oskarPhase ? 'none' : '2px solid #e2e8f0',
+                              color: i < oskarPhase ? '#fff' : i === oskarPhase ? step.color : '#94a3b8',
+                              fontSize: 13, fontWeight: 700,
+                              boxShadow: i === oskarPhase ? `0 0 0 3px ${step.color}20` : 'none',
+                              transition: 'all 0.5s ease',
+                            }}>
+                              {i < oskarPhase ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                              ) : (
+                                <span>{step.label[0]}</span>
+                              )}
+                            </div>
+                            <p style={{ fontSize: 10, fontWeight: i === oskarPhase ? 700 : 500, color: i <= oskarPhase ? step.color : '#94a3b8', margin: '4px 0 0', transition: 'all 0.3s ease' }}>
+                              {step.label}
+                            </p>
+                            <p style={{ fontSize: 9, color: i === oskarPhase ? '#475569' : '#cbd5e1', margin: '1px 0 0' }}>
+                              {step.sub}
+                            </p>
+                          </div>
+                          {i < OSKAR_STEPS.length - 1 && (
+                            <div style={{ width: 32, height: 2, borderRadius: 1, background: i < oskarPhase ? OSKAR_STEPS[i + 1].color : '#e2e8f0', transition: 'background 0.5s ease', marginBottom: 24 }} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Chat messages */}
-                  <div style={{ height: '50vh' }} className="overflow-y-auto border border-slate-200 rounded-lg p-4 space-y-4 bg-slate-50">
+                  <div style={{ height: '45vh' }} className="overflow-y-auto border border-slate-200 rounded-lg p-4 space-y-4 bg-slate-50">
                     {messages.map((msg, i) => {
-                      // Hide the initial context message (index 0 user message)
                       if (msg.role === 'user' && i === 0) return null
+                      const displayContent = stripTags(msg.content)
                       return (
                         <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                           <div
@@ -1033,7 +1121,7 @@ ${siblingItemsStr || '（なし）'}
                                 : 'bg-white text-slate-800 border border-slate-200 rounded-bl-md'
                             )}
                           >
-                            {msg.content}
+                            {displayContent}
                           </div>
                         </div>
                       )
@@ -1051,6 +1139,26 @@ ${siblingItemsStr || '（なし）'}
                     )}
                     <div ref={chatEndRef} />
                   </div>
+
+                  {/* Suggestion chips */}
+                  {showSuggestions && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {suggestions.map((s, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setUserInput(s)}
+                          style={{
+                            padding: '6px 12px', fontSize: 12, color: '#3b82f6', background: '#eff6ff',
+                            border: '1px solid #bfdbfe', borderRadius: 20, cursor: 'pointer', transition: 'all 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#dbeafe' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#eff6ff' }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Input */}
                   {!coachDone && (
@@ -1084,7 +1192,8 @@ ${siblingItemsStr || '（なし）'}
                     </p>
                   )}
                 </div>
-              )}
+                )
+              })()}
             </Card>
         </div>
       )}
