@@ -75,10 +75,21 @@ actionからreviewへ: ネクストアクションと期限が設定された後
 どの会社にも当てはまる汎用的な回答は禁止。
 形式: [SUGGEST:サジェッション内容]（30〜60文字、4つ）
 
+ステータス自動判定ルール（厳守）:
+Scalingステップでユーザーが回答した0-10の数値に基づいて、statusを自動判定する。
+10: completed（完了）
+8-9: on_track（順調）
+5-7: at_risk（リスクあり）
+3-4: delayed（遅延）
+0-2: blocked（ブロック中）
+ユーザーがスケーリングの数値を明確に回答しなかった場合は、対話の内容から推測して最も適切なstatusを設定する。
+Reviewステップで「ステータスは（判定結果）としますが、よろしいですか？」と確認すること。
+
 報告確定時:
 Reviewステップでユーザーが承認したら、以下のJSON形式で報告内容を返す。
 {
   "status": "on_track",
+  "scaling_score": 7,
   "planned_actions": "計画していた内容",
   "activities_completed": "実施内容",
   "reflections": "気づき・学び",
@@ -87,5 +98,6 @@ Reviewステップでユーザーが承認したら、以下のJSON形式で報�
   "next_action_deadline": "2026-04-20",
   "ready": true
 }
-statusの値は on_track, at_risk, delayed, completed, blocked のいずれか。
+statusの値はスケーリング数値に基づいて自動判定した on_track, at_risk, delayed, completed, blocked のいずれか。
+scaling_scoreにはユーザーが回答した0-10の数値を入れる。
 `
