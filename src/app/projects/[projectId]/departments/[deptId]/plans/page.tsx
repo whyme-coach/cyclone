@@ -1519,8 +1519,8 @@ function Step4GanttChart({
             </div>
           </div>
 
-          {/* ===== Scrollable Body ===== */}
-          <div style={{ maxHeight: '60vh', overflowY: 'auto', display: 'flex' }}>
+          {/* ===== Body ===== */}
+          <div style={{ display: 'flex' }}>
             {/* Left panel: task list */}
             <div style={{ width: `${LEFT_PANEL_WIDTH}px`, minWidth: `${LEFT_PANEL_WIDTH}px`, borderRight: '2px solid #e2e8f0', backgroundColor: '#fff', zIndex: 10 }}>
               {groupedTasks.map(([kpiName, items]) => (
