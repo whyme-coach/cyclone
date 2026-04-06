@@ -224,6 +224,41 @@ export default function ReportsPage() {
 
   const MONTH_LABELS = ['4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '1月', '2月', '3月']
 
+  // Week-based timeline (matching plans page)
+  const WEEK_WIDTH = 48
+  const fyStart = useMemo(() => new Date(fiscalYear, 3, 1), [fiscalYear])
+  const fyEnd = useMemo(() => new Date(fiscalYear + 1, 2, 31), [fiscalYear])
+  const weeks = useMemo(() => {
+    const result: { start: Date; end: Date; label: string }[] = []
+    const d = new Date(fyStart)
+    const day = d.getDay()
+    const diff = day === 0 ? 1 : day === 1 ? 0 : 8 - day
+    d.setDate(d.getDate() + diff)
+    while (d <= fyEnd) {
+      const weekStart = new Date(d)
+      const weekEnd = new Date(d)
+      weekEnd.setDate(weekEnd.getDate() + 6)
+      result.push({ start: weekStart, end: weekEnd, label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}` })
+      d.setDate(d.getDate() + 7)
+    }
+    return result
+  }, [fyStart, fyEnd])
+  const monthHeaders = useMemo(() => {
+    const result: { label: string; spanWeeks: number }[] = []
+    let currentMonth = -1, currentCount = 0
+    for (const week of weeks) {
+      const m = week.start.getMonth()
+      if (m !== currentMonth) {
+        if (currentMonth !== -1) result.push({ label: `${currentMonth + 1}月`, spanWeeks: currentCount })
+        currentMonth = m; currentCount = 1
+      } else { currentCount++ }
+    }
+    if (currentCount > 0) result.push({ label: `${currentMonth + 1}月`, spanWeeks: currentCount })
+    return result
+  }, [weeks])
+  const todayWeekIndex = weeks.findIndex(w => { const t = new Date(); return t >= w.start && t <= w.end })
+  const timelineWidth = weeks.length * WEEK_WIDTH
+
   // ---- Default month ----
   useEffect(() => {
     if (!selectedMonth && monthOptions.length > 0) {
@@ -249,12 +284,12 @@ export default function ReportsPage() {
       .order('created_at')
 
     if (data) {
-      const allItems: ActionItem[] = []
-      const planMap = new Map<string, string>()
+      const allItems: GanttActionItem[] = []
       for (const plan of data as (ActionPlan & { action_items: ActionItem[] })[]) {
-        for (const item of plan.action_items || []) {
-          allItems.push(item)
-          planMap.set(item.id, plan.title)
+        // Sort items within each plan by sort_order (same as plans page)
+        const sortedItems = [...(plan.action_items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        for (const item of sortedItems) {
+          allItems.push({ ...item, planTitle: plan.title, responsible_user_name: undefined, executor_user_name: undefined })
         }
       }
 
@@ -270,14 +305,12 @@ export default function ReportsPage() {
         if (profiles) for (const p of profiles) nameMap[p.id] = p.full_name || ''
       }
 
-      const items: GanttActionItem[] = allItems.map(item => ({
-        ...item,
-        planTitle: planMap.get(item.id) || '',
-        responsible_user_name: item.responsible_user_id ? nameMap[item.responsible_user_id] : undefined,
-        executor_user_name: item.executor_user_id ? nameMap[item.executor_user_id] : undefined,
-      }))
-      items.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
-      setActionItems(items)
+      for (const item of allItems) {
+        if (item.responsible_user_id) item.responsible_user_name = nameMap[item.responsible_user_id]
+        if (item.executor_user_id) item.executor_user_name = nameMap[item.executor_user_id]
+      }
+      // Keep plan order (created_at) + sort_order within plan — do NOT re-sort by date
+      setActionItems(allItems)
     }
     setLoading(false)
   }, [project, deptId, supabase])
@@ -846,36 +879,29 @@ ${siblingItemsStr || '（なし）'}
   // ============================================================
 
   const getBarStyle = useCallback((item: GanttActionItem) => {
-    const start = new Date(item.start_date)
-    const end = new Date(item.end_date)
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return { left: '0%', width: `${100 / 12}%`, backgroundColor: '#94a3b8' }
+    const taskStart = new Date(item.start_date)
+    const taskEnd = new Date(item.end_date)
+    if (isNaN(taskStart.getTime()) || isNaN(taskEnd.getTime())) {
+      return { position: 'absolute' as const, left: '0px', width: `${WEEK_WIDTH}px`, top: '4px', height: '20px', backgroundColor: '#94a3b8', borderRadius: '4px' }
     }
-    // Convert date to fiscal-year month position (0=April, 11=March)
-    const toFyMonthPos = (d: Date) => {
-      const m = d.getMonth() // 0=Jan
-      const fyMonth = m >= 3 ? m - 3 : m + 9 // 0=April, 11=March
-      const dayInMonth = d.getDate() - 1
-      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-      return fyMonth + dayInMonth / daysInMonth
-    }
-    const startPos = Math.max(0, toFyMonthPos(start))
-    const endPos = Math.min(12, toFyMonthPos(end))
-    const leftPct = (startPos / 12) * 100
-    const widthPct = Math.max(100 / 48, ((endPos - startPos) / 12) * 100) // min ~2% width
+    let startIdx = weeks.findIndex(w => taskStart >= w.start && taskStart <= w.end)
+    if (startIdx < 0) startIdx = weeks.findIndex(w => w.start >= taskStart)
+    if (startIdx < 0) startIdx = 0
+    let endIdx = weeks.findIndex(w => taskEnd >= w.start && taskEnd <= w.end)
+    if (endIdx < 0) { if (taskEnd > weeks[weeks.length - 1]?.end) endIdx = weeks.length - 1; else endIdx = weeks.findIndex(w => w.end >= taskEnd) }
+    if (endIdx < 0) endIdx = startIdx
+    const safeStart = Math.max(0, Math.min(startIdx, weeks.length - 1))
+    const safeEnd = Math.max(safeStart, Math.min(endIdx, weeks.length - 1))
+    const left = safeStart * WEEK_WIDTH
+    const width = Math.max(WEEK_WIDTH, (safeEnd - safeStart + 1) * WEEK_WIDTH - 4)
     const colors: Record<string, string> = {
-      completed: '#22c55e',
-      in_progress: '#3b82f6',
-      delayed: '#ef4444',
-      not_started: '#94a3b8',
-      blocked: '#f97316',
+      completed: '#22c55e', in_progress: '#3b82f6', delayed: '#f97316', not_started: '#94a3b8', blocked: '#ef4444',
     }
     return {
-      left: `${leftPct}%`,
-      width: `${Math.min(widthPct, 100 - leftPct)}%`,
-      backgroundColor: colors[item.status] || '#94a3b8',
+      position: 'absolute' as const, left: `${left + 2}px`, width: `${width}px`, top: '4px', height: '20px',
+      backgroundColor: colors[item.status] || '#94a3b8', borderRadius: '4px',
     }
-  }, [])
+  }, [weeks])
 
   // ============================================================
   // Render
@@ -931,7 +957,7 @@ ${siblingItemsStr || '（なし）'}
             ) : actionItems.length === 0 ? (
               <div className="p-4"><EmptyState title="アクションアイテムがありません" description="まずアクションプランを作成してください" /></div>
             ) : (() => {
-              // Group by planTitle (KPI name)
+              // Group by planTitle — maintain plan order (same as plans page)
               const grouped = new Map<string, GanttActionItem[]>()
               for (const item of actionItems) {
                 const list = grouped.get(item.planTitle) || []
@@ -939,97 +965,85 @@ ${siblingItemsStr || '（なし）'}
                 grouped.set(item.planTitle, list)
               }
               const groups = Array.from(grouped.entries())
-
-              // Calculate today position for the red line
-              const todayPct = (() => {
-                const today = new Date()
-                const m = today.getMonth()
-                const fyMonth = m >= 3 ? m - 3 : m + 9
-                const dayInMonth = today.getDate() - 1
-                const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
-                const pos = fyMonth + dayInMonth / daysInMonth
-                return Math.max(0, Math.min(100, (pos / 12) * 100))
-              })()
+              const ROW_HEIGHT = 36
+              const LEFT_W = 400
+              const totalRows = groups.reduce((acc, [, items]) => acc + items.length + 1, 0)
 
               return (
-                <div className="overflow-x-auto">
-                  <div style={{ minWidth: 1100 }}>
-                    {/* Header */}
-                    <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', padding: '0 0 8px' }}>
-                      <div style={{ width: 220, minWidth: 220, padding: '0 16px' }}>
-                        <span className="text-xs font-semibold text-slate-500">タスク</span>
-                      </div>
-                      <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
-                        <span className="text-xs font-semibold text-slate-500">責任者</span>
-                      </div>
-                      <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
-                        <span className="text-xs font-semibold text-slate-500">実行者</span>
-                      </div>
-                      <div style={{ flex: 1, display: 'flex' }}>
-                        {MONTH_LABELS.map(label => (
-                          <div key={label} className="text-xs text-slate-400 text-center" style={{ width: `${100 / 12}%` }}>
-                            {label}
-                          </div>
-                        ))}
-                      </div>
+                <div style={{ display: 'flex', overflow: 'hidden', borderRadius: 8 }}>
+                  {/* Left panel */}
+                  <div style={{ width: LEFT_W, minWidth: LEFT_W, borderRight: '2px solid #e2e8f0', backgroundColor: '#fff', zIndex: 10 }}>
+                    <div style={{ height: 52, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'flex-end' }}>
+                      <span style={{ width: 220, padding: '8px 16px' }} className="text-xs font-semibold text-slate-500">タスク</span>
+                      <span style={{ width: 90, padding: '8px 4px' }} className="text-xs font-semibold text-slate-500">責任者</span>
+                      <span style={{ width: 90, padding: '8px 4px' }} className="text-xs font-semibold text-slate-500">実行者</span>
                     </div>
-
-                    {/* Grouped rows */}
                     {groups.map(([kpiName, items]) => (
                       <div key={kpiName}>
-                        {/* KPI group header */}
-                        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-                          <span className="text-xs font-bold text-slate-700">{kpiName}</span>
+                        <div style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', padding: '0 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                          <span className="text-xs font-bold text-slate-700 truncate">{kpiName}</span>
                         </div>
-                        {/* Action items */}
                         {items.map(item => {
                           const isSelected = selectedItem?.id === item.id
                           return (
-                            <div
-                              key={item.id}
+                            <div key={item.id}
                               onClick={() => setSelectedItem(item)}
                               onDoubleClick={() => { selectActionItem(item); setWeeklySubStep('form') }}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                padding: '6px 0',
-                                cursor: 'pointer',
-                                borderBottom: '1px solid #f8fafc',
-                                backgroundColor: isSelected ? '#eff6ff' : 'transparent',
-                                borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent',
-                                transition: 'all 0.15s',
-                              }}
+                              style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', borderBottom: '1px solid #f8fafc', cursor: 'pointer', backgroundColor: isSelected ? '#eff6ff' : 'transparent', borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent' }}
                               onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = '#f8fafc' }}
                               onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}
                             >
-                              <div style={{ width: 220, minWidth: 220, padding: '0 16px 0 24px' }}>
-                                <p className="text-xs font-medium text-slate-800 truncate">{item.title}</p>
-                              </div>
-                              <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
-                                <span className="text-xs text-slate-500 truncate block">{item.responsible_user_name || '-'}</span>
-                              </div>
-                              <div style={{ width: 80, minWidth: 80, padding: '0 4px' }}>
-                                <span className="text-xs text-slate-500 truncate block">{item.executor_user_name || '-'}</span>
-                              </div>
-                              <div style={{ flex: 1, position: 'relative', height: 28 }}>
-                                {/* Grid lines */}
-                                <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
-                                  {MONTH_LABELS.map((_, i) => (
-                                    <div key={i} style={{ width: `${100 / 12}%`, borderLeft: '1px solid #f1f5f9' }} />
-                                  ))}
-                                </div>
-                                {/* Today line */}
-                                <div style={{ position: 'absolute', left: `${todayPct}%`, top: 0, bottom: 0, width: 2, backgroundColor: '#ef4444', zIndex: 5 }} />
-                                {/* Bar */}
-                                <div style={{ ...getBarStyle(item), position: 'absolute', top: 4, height: 20, borderRadius: 4, opacity: 0.9 }}>
-                                  <div style={{ height: '100%', borderRadius: 4, background: 'rgba(255,255,255,0.3)', width: `${item.progress_percent}%` }} />
-                                </div>
-                              </div>
+                              <div style={{ width: 220, padding: '0 16px 0 24px', minWidth: 0 }}><p className="text-xs text-slate-700 truncate">{item.title}</p></div>
+                              <div style={{ width: 90, padding: '0 4px' }}><span className="text-xs text-slate-500 truncate block">{item.responsible_user_name || '-'}</span></div>
+                              <div style={{ width: 90, padding: '0 4px' }}><span className="text-xs text-slate-500 truncate block">{item.executor_user_name || '-'}</span></div>
                             </div>
                           )
                         })}
                       </div>
                     ))}
+                  </div>
+                  {/* Right panel: week-based timeline */}
+                  <div style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden' }}>
+                    <div style={{ width: timelineWidth, minWidth: '100%' }}>
+                      {/* Month + Week header */}
+                      <div style={{ height: 52, borderBottom: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', height: 26 }}>
+                          {monthHeaders.map((mh, i) => (
+                            <div key={i} style={{ width: mh.spanWeeks * WEEK_WIDTH, textAlign: 'center', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span className="text-xs font-medium text-slate-600">{mh.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', height: 26 }}>
+                          {weeks.map((w, i) => (
+                            <div key={i} style={{ width: WEEK_WIDTH, textAlign: 'center', borderRight: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span className="text-[10px] text-slate-400">{w.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Timeline rows */}
+                      <div style={{ position: 'relative' }}>
+                        {todayWeekIndex >= 0 && (
+                          <div style={{ position: 'absolute', left: todayWeekIndex * WEEK_WIDTH + WEEK_WIDTH / 2, top: 0, width: 2, backgroundColor: '#ef4444', zIndex: 5, height: totalRows * ROW_HEIGHT }} />
+                        )}
+                        {weeks.map((_, i) => (
+                          <div key={i} style={{ position: 'absolute', left: i * WEEK_WIDTH, top: 0, width: 1, backgroundColor: '#f1f5f9', height: totalRows * ROW_HEIGHT }} />
+                        ))}
+                        {groups.map(([kpiName, items]) => (
+                          <div key={kpiName}>
+                            <div style={{ height: ROW_HEIGHT, backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }} />
+                            {items.map(item => (
+                              <div key={item.id} style={{ height: ROW_HEIGHT, position: 'relative', borderBottom: '1px solid #f8fafc' }}>
+                                <div style={getBarStyle(item)}>
+                                  <span style={{ fontSize: 10, color: '#fff', paddingLeft: 6, lineHeight: '20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', pointerEvents: 'none' }}>{item.title}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )

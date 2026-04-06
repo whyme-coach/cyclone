@@ -517,8 +517,8 @@ export default function ActionPlansPage() {
             deliverable: item.deliverable,
             action_plan_id: item.action_plan_id,
             kpi_name: kpi?.name || plan.title,
-            responsible_user_name: item.responsible_user_id ? userNameMap[item.responsible_user_id] : undefined,
-            executor_user_name: item.executor_user_id ? userNameMap[item.executor_user_id] : undefined,
+            responsible_user_name: ((item as unknown as Record<string, string>).responsible_name) || (item.responsible_user_id ? userNameMap[item.responsible_user_id] : undefined),
+            executor_user_name: ((item as unknown as Record<string, string>).executor_name) || (item.executor_user_id ? userNameMap[item.executor_user_id] : undefined),
           })
         }
       }
@@ -534,18 +534,21 @@ export default function ActionPlansPage() {
 
   const handleSaveTask = async (task: GanttTask) => {
     try {
+      const updateData: Record<string, unknown> = {
+        title: task.title,
+        description: task.description,
+        start_date: task.start_date,
+        end_date: task.end_date,
+        status: task.status,
+        deliverable: task.deliverable,
+        responsible_user_id: task.responsible_user_id || null,
+        executor_user_id: task.executor_user_id || null,
+      }
+      if (task.responsible_user_name !== undefined) updateData.responsible_name = task.responsible_user_name || null
+      if (task.executor_user_name !== undefined) updateData.executor_name = task.executor_user_name || null
       await supabase
         .from('action_items')
-        .update({
-          title: task.title,
-          description: task.description,
-          start_date: task.start_date,
-          end_date: task.end_date,
-          status: task.status,
-          deliverable: task.deliverable,
-          responsible_user_id: task.responsible_user_id || null,
-          executor_user_id: task.executor_user_id || null,
-        })
+        .update(updateData)
         .eq('id', task.id)
       setGanttTasks(prev => prev.map(t => t.id === task.id ? task : t))
       toast('更新しました', 'success')
@@ -659,7 +662,6 @@ export default function ActionPlansPage() {
           {showEditModal && editingTask && (
             <TaskEditModal
               task={editingTask}
-              members={projectMembers}
               onSave={handleSaveTask}
               onClose={() => { setShowEditModal(false); setEditingTask(null) }}
             />
@@ -1626,29 +1628,15 @@ function Step4GanttChart({
 
 function TaskEditModal({
   task,
-  members,
   onSave,
   onClose,
 }: {
   task: GanttTask
-  members: ProjectMember[]
   onSave: (task: GanttTask) => void
   onClose: () => void
 }) {
   const [form, setForm] = useState<GanttTask>({ ...task })
   const [saving, setSaving] = useState(false)
-
-  const memberOptions = useMemo(() => {
-    return [
-      { value: '', label: '未割当' },
-      ...members
-        .filter(m => m.user_profile)
-        .map(m => ({
-          value: m.user_id,
-          label: m.user_profile?.full_name || m.user_profile?.email || m.user_id,
-        })),
-    ]
-  }, [members])
 
   const handleSave = async () => {
     setSaving(true)
@@ -1694,17 +1682,17 @@ function TaskEditModal({
           placeholder="例: 調査報告書、提案資料"
         />
         <div className="grid grid-cols-2 gap-4">
-          <Select
+          <Input
             label="責任者"
-            value={form.responsible_user_id || ''}
-            onChange={e => setForm({ ...form, responsible_user_id: e.target.value || undefined })}
-            options={memberOptions}
+            value={form.responsible_user_name || ''}
+            onChange={e => setForm({ ...form, responsible_user_name: e.target.value })}
+            placeholder="例: 佐藤 俊介"
           />
-          <Select
+          <Input
             label="実行者"
-            value={form.executor_user_id || ''}
-            onChange={e => setForm({ ...form, executor_user_id: e.target.value || undefined })}
-            options={memberOptions}
+            value={form.executor_user_name || ''}
+            onChange={e => setForm({ ...form, executor_user_name: e.target.value })}
+            placeholder="例: 田中 雄一"
           />
         </div>
         <Select
