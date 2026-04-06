@@ -468,20 +468,83 @@ export default function ReportsPage() {
     const startCoach = async () => {
       setAiLoading(true)
       try {
-        const comp = company as { name?: string; industry?: string } | null
+        const comp = company as { name?: string; industry?: string; business_description?: string } | null
+
+        // Fetch department profile (strengths, challenges, technologies)
+        let deptProfileStr = ''
+        try {
+          const { data: dp } = await supabase
+            .from('department_profiles')
+            .select('strengths, challenges, technologies, previous_year_initiatives')
+            .eq('project_id', project!.id)
+            .eq('department_id', deptId)
+            .maybeSingle()
+          if (dp) {
+            const parts: string[] = []
+            if (dp.strengths && Array.isArray(dp.strengths)) {
+              parts.push('部門の強み: ' + (dp.strengths as Array<{title: string}>).map((s: {title: string}) => s.title).join('、'))
+            }
+            if (dp.challenges && Array.isArray(dp.challenges)) {
+              parts.push('部門の課題: ' + (dp.challenges as Array<{title: string}>).map((c: {title: string}) => c.title).join('、'))
+            }
+            if (dp.technologies && Array.isArray(dp.technologies)) {
+              parts.push('技術領域: ' + (dp.technologies as string[]).join('、'))
+            }
+            deptProfileStr = parts.join('\n')
+          }
+        } catch { /* ignore */ }
+
+        // Fetch the action plan for this item (to get WOOP summary and all sibling items)
+        let woopStr = ''
+        let siblingItemsStr = ''
+        try {
+          const { data: plan } = await supabase
+            .from('action_plans')
+            .select('woop_summary, ai_advice, action_items(*)')
+            .eq('id', selectedItem.action_plan_id)
+            .single()
+          if (plan) {
+            const woop = plan.woop_summary as { wish?: string; obstacle?: string; plan?: string } | null
+            if (woop) {
+              const woopParts: string[] = []
+              if (woop.wish) woopParts.push(`目標（Wish）: ${woop.wish}`)
+              if (woop.obstacle) woopParts.push(`課題（Obstacle）: ${woop.obstacle}`)
+              if (woop.plan) woopParts.push(`解決策（Plan）: ${woop.plan}`)
+              woopStr = woopParts.join('\n')
+            }
+            if (plan.action_items && Array.isArray(plan.action_items)) {
+              siblingItemsStr = (plan.action_items as ActionItem[])
+                .sort((a: ActionItem, b: ActionItem) => a.sort_order - b.sort_order)
+                .map((ai: ActionItem, idx: number) => `${idx + 1}. ${ai.title}（${ai.start_date} 〜 ${ai.end_date}、${ai.status === 'completed' ? '完了' : ai.status === 'in_progress' ? '進行中' : ai.status === 'delayed' ? '遅延' : '未着手'}）`)
+                .join('\n')
+            }
+          }
+        } catch { /* ignore */ }
+
         const contextMsg = `以下のアクションアイテムについて、週次報告を作成したいです。
 
+【会社情報】
 会社名: ${comp?.name || ''}
 業種: ${comp?.industry || ''}
+事業内容: ${comp?.business_description || ''}
+
+【部門情報】
 部門: ${department?.name || ''}
-KPI/施策: ${selectedItem.planTitle}
+${deptProfileStr ? `${deptProfileStr}\n` : ''}
+【アクションプランの背景（WOOPコーチング結果）】
+${woopStr || '（未設定）'}
+
+【このKPIのアクションアイテム一覧】
+${siblingItemsStr || '（なし）'}
+
+【今回の報告対象】
 アクションアイテム: ${selectedItem.title}
 説明: ${selectedItem.description || '（なし）'}
 期間: ${selectedItem.start_date} 〜 ${selectedItem.end_date}
 現在のステータス: ${STATUS_BADGE[selectedItem.status]?.label || selectedItem.status}
 進捗: ${selectedItem.progress_percent}%
 
-よろしくお願いします。`
+上記の背景を踏まえた上で、このアクションアイテムの週次報告を一緒に作成してください。`
 
         const userMsg: ChatMessage = {
           role: 'user',
