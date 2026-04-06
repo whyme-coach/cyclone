@@ -1400,13 +1400,30 @@ function Step4GanttChart({
   const getBarStyle = (task: GanttTask) => {
     const taskStart = new Date(task.start_date)
     const taskEnd = new Date(task.end_date)
-    const startIdx = weeks.findIndex(w => taskStart <= w.end && taskStart >= w.start)
-    const endIdx = weeks.findIndex(w => taskEnd <= w.end && taskEnd >= w.start)
-    const effectiveStart = startIdx >= 0 ? startIdx : weeks.findIndex(w => w.start >= taskStart)
-    const effectiveEnd = endIdx >= 0 ? endIdx : weeks.length - 1
 
-    const left = Math.max(0, effectiveStart) * WEEK_WIDTH
-    const width = Math.max(1, (Math.min(effectiveEnd, weeks.length - 1) - Math.max(0, effectiveStart) + 1)) * WEEK_WIDTH - 4
+    // Safety: invalid dates
+    if (isNaN(taskStart.getTime()) || isNaN(taskEnd.getTime())) {
+      return { position: 'absolute' as const, left: '0px', width: '20px', top: '8px', height: '24px', backgroundColor: '#94a3b8', borderRadius: '4px', cursor: 'pointer' }
+    }
+
+    // Find week indices - use broader matching for tasks that span beyond visible weeks
+    let startIdx = weeks.findIndex(w => taskStart >= w.start && taskStart <= w.end)
+    if (startIdx < 0) startIdx = weeks.findIndex(w => w.start >= taskStart)
+    if (startIdx < 0) startIdx = 0
+
+    let endIdx = weeks.findIndex(w => taskEnd >= w.start && taskEnd <= w.end)
+    if (endIdx < 0) {
+      // Task ends after all visible weeks - clamp to last week
+      if (taskEnd > weeks[weeks.length - 1]?.end) endIdx = weeks.length - 1
+      else endIdx = weeks.findIndex(w => w.end >= taskEnd)
+    }
+    if (endIdx < 0) endIdx = startIdx
+
+    const safeStart = Math.max(0, Math.min(startIdx, weeks.length - 1))
+    const safeEnd = Math.max(safeStart, Math.min(endIdx, weeks.length - 1))
+
+    const left = safeStart * WEEK_WIDTH
+    const width = Math.max(WEEK_WIDTH, (safeEnd - safeStart + 1) * WEEK_WIDTH - 4)
 
     const colors: Record<string, string> = {
       completed: '#22c55e',
