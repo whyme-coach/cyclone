@@ -462,7 +462,9 @@ export default function ReportsPage() {
       toast('週次報告をタイムラインに投稿しました', 'success')
       clearForm()
       setWeeklySubStep('gantt')
+      setActiveTab('timeline')
       fetchActionItems()
+      fetchTimeline()
     } catch {
       toast('報告の保存に失敗しました', 'error')
     } finally {
@@ -740,6 +742,8 @@ ${siblingItemsStr || '（なし）'}
 
       toast('月次報告をタイムラインに投稿しました', 'success')
       setMonthlyContent('')
+      setActiveTab('timeline')
+      fetchTimeline()
     } catch {
       toast('月次報告の保存に失敗しました', 'error')
     } finally {
@@ -1310,61 +1314,125 @@ ${siblingItemsStr || '（なし）'}
           ) : (
             timelinePosts.map(post => {
               const profile = post.user_profile
-              const initials = profile?.full_name ? profile.full_name.slice(0, 2) : '??'
               const postBadge = POST_TYPE_BADGE[post.post_type]
               const isContentExpanded = expandedContent.has(post.id)
-              const contentLong = (post.content?.length || 0) > 200
               const commentsOpen = expandedComments.has(post.id)
               const commentCount = post.comments?.length || 0
+              const acks = ((post.metadata as Record<string, unknown>)?.acks || []) as Array<{ user_id: string; name: string }>
+              const hasAcked = acks.some(a => a.user_id === member?.user_id)
+
+              // Parse content into structured sections
+              const contentLines = (post.content || '').split('\n').filter(Boolean)
 
               return (
-                <Card key={post.id} className="hover:shadow-md transition-shadow">
-                  {/* Header */}
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
-                      {initials}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-slate-900">
-                          {profile?.full_name || '不明'}
-                        </span>
-                        {postBadge && (
-                          <Badge variant={postBadge.variant}>{postBadge.label}</Badge>
-                        )}
-                        <span className="text-xs text-slate-400">{relativeTime(post.created_at)}</span>
-                      </div>
+                <Card key={post.id}>
+                  {/* Header: title + badge + time */}
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      {postBadge && (
+                        <Badge variant={postBadge.variant}>{postBadge.label}</Badge>
+                      )}
+                      <h3 className="text-base font-bold text-slate-900 mt-1">{post.title}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {profile?.full_name || '不明'} ・ {relativeTime(post.created_at)}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Body */}
-                  <div className="mb-3">
-                    <p className="text-sm font-bold text-slate-900 mb-1">{post.title}</p>
-                    {post.content && (
-                      <div className="text-sm text-slate-600 whitespace-pre-wrap">
-                        {contentLong && !isContentExpanded
-                          ? post.content.slice(0, 200) + '...'
-                          : post.content}
-                        {contentLong && (
-                          <button
-                            onClick={() => toggleContent(post.id)}
-                            className="text-blue-600 hover:text-blue-700 ml-1 text-xs font-medium"
-                          >
-                            {isContentExpanded ? '閉じる' : 'もっと見る'}
+                  {/* Content: structured display */}
+                  {post.content && (
+                    <div className="mt-3 bg-slate-50 rounded-lg p-4">
+                      {(!isContentExpanded && contentLines.length > 4) ? (
+                        <>
+                          {contentLines.slice(0, 4).map((line, i) => {
+                            const colonIdx = line.indexOf(':')
+                            if (colonIdx > 0 && colonIdx < 15) {
+                              const label = line.slice(0, colonIdx)
+                              const value = line.slice(colonIdx + 1).trim()
+                              return (
+                                <div key={i} className="mb-2 last:mb-0">
+                                  <span className="text-xs font-semibold text-slate-500">{label}</span>
+                                  <p className="text-sm text-slate-800 mt-0.5">{value}</p>
+                                </div>
+                              )
+                            }
+                            return <p key={i} className="text-sm text-slate-700 mb-1">{line}</p>
+                          })}
+                          <button onClick={() => toggleContent(post.id)} className="text-blue-600 hover:text-blue-700 text-xs font-medium mt-1">
+                            もっと見る
                           </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                        </>
+                      ) : (
+                        <>
+                          {contentLines.map((line, i) => {
+                            const colonIdx = line.indexOf(':')
+                            if (colonIdx > 0 && colonIdx < 15) {
+                              const label = line.slice(0, colonIdx)
+                              const value = line.slice(colonIdx + 1).trim()
+                              return (
+                                <div key={i} className="mb-2 last:mb-0">
+                                  <span className="text-xs font-semibold text-slate-500">{label}</span>
+                                  <p className="text-sm text-slate-800 mt-0.5">{value}</p>
+                                </div>
+                              )
+                            }
+                            return <p key={i} className="text-sm text-slate-700 mb-1">{line}</p>
+                          })}
+                          {contentLines.length > 4 && (
+                            <button onClick={() => toggleContent(post.id)} className="text-blue-600 hover:text-blue-700 text-xs font-medium mt-1">
+                              閉じる
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
 
-                  {/* Footer */}
-                  <div className="border-t border-slate-100 pt-2">
+                  {/* Footer: ack + comment buttons */}
+                  <div className="flex items-center gap-4 mt-3 pt-2 border-t border-slate-100">
+                    {/* Ack button */}
+                    <div className="relative group">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/toggle-timeline-ack', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ postId: post.id }),
+                            })
+                            if (res.ok) fetchTimeline()
+                          } catch { /* ignore */ }
+                        }}
+                        className={cn(
+                          'flex items-center gap-1.5 text-sm transition-colors',
+                          hasAcked ? 'text-green-600' : 'text-slate-400 hover:text-green-600'
+                        )}
+                      >
+                        <svg className="w-4 h-4" fill={hasAcked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        確認{acks.length > 0 ? ` (${acks.length})` : ''}
+                      </button>
+                      {/* Tooltip showing who acked */}
+                      {acks.length > 0 && (
+                        <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block z-20">
+                          <div className="bg-slate-800 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
+                            <p className="font-semibold mb-1">確認済み:</p>
+                            {acks.map((a, i) => (
+                              <p key={i}>{a.name || '不明'}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Comment button */}
                     <button
                       onClick={() => toggleComments(post.id)}
-                      className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"
+                      className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-700 transition-colors"
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                       </svg>
                       コメント{commentCount > 0 ? ` (${commentCount})` : ''}
                     </button>
@@ -1372,23 +1440,17 @@ ${siblingItemsStr || '（なし）'}
 
                   {/* Comment thread */}
                   {commentsOpen && (
-                    <div className="mt-3 border-t border-slate-100 pt-3 space-y-3">
+                    <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
                       {post.comments && post.comments.length > 0 ? (
                         post.comments.map(comment => {
                           const cp = comment.user_profile
-                          const ci = cp?.full_name ? cp.full_name.slice(0, 2) : '??'
                           return (
-                            <div key={comment.id} className="flex gap-2">
-                              <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                {ci}
+                            <div key={comment.id} className="pl-3 border-l-2 border-slate-200">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-700">{cp?.full_name || '不明'}</span>
+                                <span className="text-xs text-slate-400">{relativeTime(comment.created_at)}</span>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-semibold text-slate-800">{cp?.full_name || '不明'}</span>
-                                  <span className="text-xs text-slate-400">{relativeTime(comment.created_at)}</span>
-                                </div>
-                                <p className="text-sm text-slate-600 mt-0.5 whitespace-pre-wrap">{comment.content}</p>
-                              </div>
+                              <p className="text-sm text-slate-600 mt-0.5 whitespace-pre-wrap">{comment.content}</p>
                             </div>
                           )
                         })
@@ -1398,21 +1460,20 @@ ${siblingItemsStr || '（なし）'}
 
                       {/* Comment input */}
                       <div className="flex gap-2 pt-2">
-                        <Textarea
+                        <textarea
+                          className="flex-1 px-3 py-2 text-sm text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-slate-400 resize-none"
                           placeholder="コメントを入力..."
                           value={commentInputs[post.id] || ''}
                           onChange={e => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
                           rows={2}
-                          className="flex-1 text-sm"
                         />
-                        <Button
+                        <button
                           onClick={() => handlePostComment(post.id)}
-                          loading={commentSubmitting === post.id}
                           disabled={commentSubmitting === post.id || !(commentInputs[post.id]?.trim())}
-                          className="self-end"
+                          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-stretch"
                         >
                           投稿
-                        </Button>
+                        </button>
                       </div>
                     </div>
                   )}
