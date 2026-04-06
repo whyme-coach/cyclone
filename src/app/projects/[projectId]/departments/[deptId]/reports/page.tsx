@@ -194,6 +194,15 @@ export default function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState('')
   const [monthlyReports, setMonthlyReports] = useState<(ProgressReport & { action_item?: ActionItem })[]>([])
   const [monthlyContent, setMonthlyContent] = useState('')
+  const [monthlySections, setMonthlySections] = useState<{
+    summary: string
+    achievements: string
+    challenges: string
+    kpi_summary: string
+    next_month_focus: string
+    risk_alerts: string
+    advice: string
+  } | null>(null)
   const [monthlyAiLoading, setMonthlyAiLoading] = useState(false)
   const [monthlySubmitting, setMonthlySubmitting] = useState(false)
   const [monthlyLoading, setMonthlyLoading] = useState(false)
@@ -689,19 +698,22 @@ ${siblingItemsStr || '（なし）'}
       } | null
 
       if (parsed) {
-        const parts: string[] = []
-        if (parsed.summary) parts.push(`【サマリー】\n${parsed.summary}`)
-        if (parsed.achievements?.length) parts.push(`【達成事項】\n${parsed.achievements.map(a => `・${a}`).join('\n')}`)
-        if (parsed.challenges?.length) parts.push(`【課題】\n${parsed.challenges.map(c => `・${c}`).join('\n')}`)
-        if (parsed.kpi_summary) parts.push(`【KPI状況】\n${parsed.kpi_summary}`)
-        if (parsed.next_month_focus?.length) parts.push(`【来月の重点事項】\n${parsed.next_month_focus.map(f => `・${f}`).join('\n')}`)
-        if (parsed.risk_alerts?.length) {
-          parts.push(`【リスクアラート】\n${parsed.risk_alerts.map(r => `・[${r.level}] ${r.item}: ${r.recommendation}`).join('\n')}`)
-        }
-        if (parsed.advice) parts.push(`【アドバイス】\n${parsed.advice}`)
-        setMonthlyContent(parts.join('\n\n'))
+        setMonthlySections({
+          summary: parsed.summary || '',
+          achievements: parsed.achievements?.join('\n') || '',
+          challenges: parsed.challenges?.join('\n') || '',
+          kpi_summary: parsed.kpi_summary || '',
+          next_month_focus: parsed.next_month_focus?.join('\n') || '',
+          risk_alerts: parsed.risk_alerts?.map(r => `[${r.level}] ${r.item}: ${r.recommendation}`).join('\n') || '',
+          advice: parsed.advice || '',
+        })
+        setMonthlyContent('generated') // flag that content exists
       } else {
-        setMonthlyContent(getAITextResponse(aiData) || '月次報告の生成に失敗しました')
+        const text = getAITextResponse(aiData) || '月次報告の生成に失敗しました'
+        setMonthlySections({
+          summary: text, achievements: '', challenges: '', kpi_summary: '', next_month_focus: '', risk_alerts: '', advice: '',
+        })
+        setMonthlyContent('generated')
       }
     } catch {
       toast('月次報告の生成に失敗しました', 'error')
@@ -711,7 +723,7 @@ ${siblingItemsStr || '（なし）'}
   }
 
   const handleSubmitMonthly = async () => {
-    if (!project || !monthlyContent.trim()) return
+    if (!project || !monthlySections) return
     setMonthlySubmitting(true)
     try {
       const res1 = await fetch('/api/save-monthly-report', {
@@ -721,10 +733,21 @@ ${siblingItemsStr || '（なし）'}
           projectId: project.id,
           departmentId: deptId,
           reportMonth: selectedMonth + '-01',
-          content: { text: monthlyContent },
+          content: { sections: monthlySections },
         }),
       })
       if (!res1.ok) throw new Error('Save monthly report failed')
+
+      // Build structured content for timeline post
+      const timelineContent = [
+        monthlySections.summary ? `サマリー: ${monthlySections.summary}` : '',
+        monthlySections.achievements ? `達成事項: ${monthlySections.achievements}` : '',
+        monthlySections.challenges ? `課題: ${monthlySections.challenges}` : '',
+        monthlySections.kpi_summary ? `KPI状況: ${monthlySections.kpi_summary}` : '',
+        monthlySections.next_month_focus ? `来月の重点: ${monthlySections.next_month_focus}` : '',
+        monthlySections.risk_alerts ? `リスク: ${monthlySections.risk_alerts}` : '',
+        monthlySections.advice ? `アドバイス: ${monthlySections.advice}` : '',
+      ].filter(Boolean).join('\n')
 
       const [year, month] = selectedMonth.split('-')
       const res2 = await fetch('/api/save-timeline-post', {
@@ -735,13 +758,14 @@ ${siblingItemsStr || '（なし）'}
           departmentId: deptId,
           postType: 'monthly_report',
           title: `${year}年${parseInt(month)}月 月次報告`,
-          content: monthlyContent.slice(0, 2000),
+          content: timelineContent,
         }),
       })
       if (!res2.ok) throw new Error('Timeline post failed')
 
       toast('月次報告をタイムラインに投稿しました', 'success')
       setMonthlyContent('')
+      setMonthlySections(null)
       setActiveTab('timeline')
       fetchTimeline()
     } catch {
@@ -1276,19 +1300,34 @@ ${siblingItemsStr || '（なし）'}
             {monthlyAiLoading && (
               <div className="flex justify-center py-8"><Spinner /></div>
             )}
-            {monthlyContent && (
-              <div className="space-y-4">
-                <Textarea
-                  value={monthlyContent}
-                  onChange={e => setMonthlyContent(e.target.value)}
-                  rows={16}
-                  className="font-mono text-sm"
-                />
-                <div className="flex justify-end">
+            {monthlySections && (
+              <div className="space-y-4 mt-4">
+                {/* Section editors */}
+                {([
+                  { key: 'summary', label: 'サマリー', rows: 3 },
+                  { key: 'achievements', label: '達成事項', rows: 4 },
+                  { key: 'challenges', label: '課題', rows: 4 },
+                  { key: 'kpi_summary', label: 'KPI状況', rows: 3 },
+                  { key: 'next_month_focus', label: '来月の重点事項', rows: 4 },
+                  { key: 'risk_alerts', label: 'リスクアラート', rows: 3 },
+                  { key: 'advice', label: 'アドバイス', rows: 3 },
+                ] as const).map(({ key, label, rows }) => (
+                  <div key={key}>
+                    <p className="text-sm font-semibold text-slate-700 mb-1">{label}</p>
+                    <textarea
+                      className="w-full px-3 py-2 text-sm text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-slate-400 resize-vertical"
+                      value={monthlySections[key]}
+                      onChange={e => setMonthlySections(prev => prev ? { ...prev, [key]: e.target.value } : prev)}
+                      rows={rows}
+                    />
+                  </div>
+                ))}
+
+                <div className="flex justify-end pt-2">
                   <Button
                     onClick={handleSubmitMonthly}
                     loading={monthlySubmitting}
-                    disabled={monthlySubmitting || !monthlyContent.trim()}
+                    disabled={monthlySubmitting}
                   >
                     タイムラインに投稿
                   </Button>
