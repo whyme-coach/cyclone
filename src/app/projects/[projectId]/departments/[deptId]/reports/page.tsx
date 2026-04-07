@@ -641,6 +641,31 @@ export default function ReportsPage() {
           }
         } catch { /* ignore */ }
 
+        // Fetch past weekly reports for this action item
+        let pastReportsStr = ''
+        try {
+          const { data: pastReports } = await supabase
+            .from('progress_reports')
+            .select('*')
+            .eq('action_item_id', selectedItem.id)
+            .eq('is_draft', false)
+            .order('submitted_at', { ascending: false })
+            .limit(5)
+          if (pastReports && pastReports.length > 0) {
+            const statusLabels: Record<string, string> = { on_track: '順調', at_risk: 'リスクあり', delayed: '遅延', completed: '完了', blocked: 'ブロック中' }
+            pastReportsStr = pastReports.reverse().map((r: Record<string, unknown>, idx: number) => {
+              const date = r.submitted_at ? new Date(r.submitted_at as string).toLocaleDateString('ja-JP') : '日付不明'
+              const parts = [`第${idx + 1}回（${date}）ステータス: ${statusLabels[r.status as string] || r.status}`]
+              if (r.planned_actions) parts.push(`  計画: ${r.planned_actions}`)
+              if (r.activities_completed) parts.push(`  実施内容: ${r.activities_completed}`)
+              if (r.reflections) parts.push(`  気づき: ${r.reflections}`)
+              if (r.challenges) parts.push(`  課題: ${r.challenges}`)
+              if (r.next_actions) parts.push(`  ネクストアクション: ${r.next_actions}`)
+              return parts.join('\n')
+            }).join('\n\n')
+          }
+        } catch { /* ignore */ }
+
         const contextMsg = `以下のアクションアイテムについて、週次報告を作成したいです。
 
 【会社情報】
@@ -657,6 +682,7 @@ ${woopStr || '（未設定）'}
 【このKPIのアクションアイテム一覧】
 ${siblingItemsStr || '（なし）'}
 
+${pastReportsStr ? `【このアクションアイテムの過去の週次報告】\n${pastReportsStr}\n` : ''}
 【今回の報告対象】
 アクションアイテム: ${selectedItem.title}
 説明: ${selectedItem.description || '（なし）'}
