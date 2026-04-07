@@ -200,10 +200,10 @@ export default function ProjectDashboardPage() {
                   )}
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData} margin={{ top: 5, right: 15, left: 5, bottom: 20 }}>
+                      <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey="month" tick={{ fontSize: 9 }} angle={-45} textAnchor="end" height={40} />
-                        <YAxis tick={{ fontSize: 10 }} width={40} />
+                        <XAxis dataKey="month" tick={{ fontSize: 9 }} interval={0} />
+                        <YAxis tick={{ fontSize: 10 }} />
                         <Tooltip />
                         {/* Target line (red dashed) */}
                         {kpi.target_value != null && (

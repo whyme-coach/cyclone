@@ -71,21 +71,21 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     if (projectRes.data) {
       const p = projectRes.data
       setProject(p)
-      if (p.company) {
-        setCompany(p.company as unknown as Company)
-      } else {
-        // Fallback: use admin API to fetch company (RLS may block client-side join)
-        try {
-          const res = await fetch(`/api/project-info?projectId=${projectId}`)
-          if (res.ok) {
-            const info = await res.json()
-            if (info.companyName) {
-              setCompany({ name: info.companyName } as Company)
-            }
-          }
-        } catch { /* ignore */ }
+      const companyData = p.company as unknown as Company | null
+      if (companyData && companyData.name) {
+        setCompany(companyData)
       }
     }
+    // Always try to fetch company via admin API as fallback
+    try {
+      const res = await fetch(`/api/project-info?projectId=${projectId}`)
+      if (res.ok) {
+        const info = await res.json()
+        if (info.companyName) {
+          setCompany(prev => prev?.name ? prev : { name: info.companyName } as Company)
+        }
+      }
+    } catch { /* ignore */ }
     if (memberRes.data) setMember(memberRes.data)
     if (deptRes.data) setDepartments(deptRes.data)
     setLoading(false)
