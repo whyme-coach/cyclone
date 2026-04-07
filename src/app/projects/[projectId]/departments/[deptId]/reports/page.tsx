@@ -192,6 +192,12 @@ export default function ReportsPage() {
   const [coachDone, setCoachDone] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
+  // KPI record state
+  const [linkedKpi, setLinkedKpi] = useState<{ id: string; name: string; target_value?: number; target_unit?: string; frequency: string } | null>(null)
+  const [kpiRecordValue, setKpiRecordValue] = useState('')
+  const [kpiRecordPeriod, setKpiRecordPeriod] = useState('')
+  const [latestKpiRecord, setLatestKpiRecord] = useState<{ value: number; record_date: string } | null>(null)
+
   // ---- Monthly state ----
   const [selectedMonth, setSelectedMonth] = useState('')
   const [monthlyReports, setMonthlyReports] = useState<(ProgressReport & { action_item?: ActionItem })[]>([])
@@ -459,7 +465,7 @@ export default function ReportsPage() {
     setReportMode('form')
   }, [])
 
-  const selectActionItem = useCallback((item: GanttActionItem) => {
+  const selectActionItem = useCallback(async (item: GanttActionItem) => {
     setSelectedItem(item)
     setMessages([])
     setCoachDone(false)
@@ -471,7 +477,52 @@ export default function ReportsPage() {
     setFormChallenges('')
     setFormNextActions('')
     setFormDeadline('')
-  }, [])
+    setKpiRecordValue('')
+    setLinkedKpi(null)
+    setLatestKpiRecord(null)
+
+    // Fetch linked KPI via action_plan.kpi_id
+    try {
+      const { data: plan } = await supabase
+        .from('action_plans')
+        .select('kpi_id')
+        .eq('id', item.action_plan_id)
+        .single()
+      if (plan?.kpi_id) {
+        const { data: kpi } = await supabase
+          .from('kpis')
+          .select('id, name, target_value, target_unit, frequency')
+          .eq('id', plan.kpi_id)
+          .single()
+        if (kpi) {
+          setLinkedKpi(kpi)
+          // Auto-select current period
+          const now = new Date()
+          if (kpi.frequency === 'monthly') {
+            setKpiRecordPeriod(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`)
+          } else if (kpi.frequency === 'quarterly') {
+            const q = Math.floor(now.getMonth() / 3) * 3 + 1
+            setKpiRecordPeriod(`${now.getFullYear()}-${String(q).padStart(2, '0')}-01`)
+          } else {
+            // Weekly: current Monday
+            const d = new Date(now)
+            const day = d.getDay()
+            const diff = day === 0 ? -6 : 1 - day
+            d.setDate(d.getDate() + diff)
+            setKpiRecordPeriod(d.toISOString().split('T')[0])
+          }
+          // Fetch latest record
+          const { data: latestRec } = await supabase
+            .from('kpi_records')
+            .select('value, record_date')
+            .eq('kpi_id', kpi.id)
+            .order('record_date', { ascending: false })
+            .limit(1)
+          if (latestRec && latestRec.length > 0) setLatestKpiRecord(latestRec[0])
+        }
+      }
+    } catch { /* ignore */ }
+  }, [supabase])
 
   // ============================================================
   // Weekly: Submit report
@@ -523,6 +574,17 @@ export default function ReportsPage() {
         }),
       })
       if (!res2.ok) throw new Error('Timeline post failed')
+
+      // 3. Save KPI record if value was entered
+      if (linkedKpi && kpiRecordValue && kpiRecordPeriod) {
+        try {
+          await fetch('/api/save-kpi-record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kpiId: linkedKpi.id, recordDate: kpiRecordPeriod, value: parseFloat(kpiRecordValue) }),
+          })
+        } catch { /* ignore KPI record errors */ }
+      }
 
       toast('週次報告をタイムラインに投稿しました', 'success')
       clearForm()
@@ -1228,6 +1290,37 @@ ${pastReportsStr ? `【このアクションアイテムの過去の週次報告
                     value={formDeadline}
                     onChange={e => setFormDeadline(e.target.value)}
                   />
+
+                  {/* KPI Record Input */}
+                  {linkedKpi && (
+                    <div className="border-t border-slate-200 pt-4">
+                      <p className="text-sm font-semibold text-slate-700 mb-2">📊 KPI実績入力（任意）</p>
+                      <div className="bg-slate-50 rounded-lg p-3 mb-3">
+                        <p className="text-sm font-medium text-slate-800">{linkedKpi.name}</p>
+                        <div className="flex gap-3 text-xs text-slate-500 mt-1">
+                          <span>目標: {linkedKpi.target_value} {linkedKpi.target_unit}</span>
+                          <span>頻度: {linkedKpi.frequency === 'weekly' ? '週次' : linkedKpi.frequency === 'monthly' ? '月次' : '四半期'}</span>
+                          {latestKpiRecord && <span>前回実績: {latestKpiRecord.value} {linkedKpi.target_unit}（{latestKpiRecord.record_date}）</span>}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Input
+                          label="対象期間"
+                          type="date"
+                          value={kpiRecordPeriod}
+                          onChange={e => setKpiRecordPeriod(e.target.value)}
+                        />
+                        <Input
+                          label={`実績値${linkedKpi.target_unit ? ` (${linkedKpi.target_unit})` : ''}`}
+                          type="number"
+                          value={kpiRecordValue}
+                          onChange={e => setKpiRecordValue(e.target.value)}
+                          placeholder="未入力の場合はスキップ"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex justify-end gap-3 pt-2">
                     <Button variant="secondary" onClick={clearForm}>キャンセル</Button>
                     <Button onClick={handleSubmitWeekly} loading={submitting} disabled={submitting}>
