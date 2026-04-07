@@ -626,9 +626,17 @@ export default function ReportsPage() {
             }
             if (plan.action_items && Array.isArray(plan.action_items)) {
               siblingItemsStr = (plan.action_items as ActionItem[])
-                .sort((a: ActionItem, b: ActionItem) => a.sort_order - b.sort_order)
-                .map((ai: ActionItem, idx: number) => `${idx + 1}. ${ai.title}（${ai.start_date} 〜 ${ai.end_date}、${ai.status === 'completed' ? '完了' : ai.status === 'in_progress' ? '進行中' : ai.status === 'delayed' ? '遅延' : '未着手'}）`)
-                .join('\n')
+                .sort((a: ActionItem, b: ActionItem) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+                .map((ai: ActionItem, idx: number) => {
+                  const r = ai as unknown as Record<string, string>
+                  const parts = [`${idx + 1}. ${ai.title}（${ai.start_date} 〜 ${ai.end_date}、${ai.status === 'completed' ? '完了' : ai.status === 'in_progress' ? '進行中' : ai.status === 'delayed' ? '遅延' : '未着手'}）`]
+                  if (ai.description) parts.push(`   説明: ${ai.description}`)
+                  if (ai.deliverable) parts.push(`   成果物: ${ai.deliverable}`)
+                  if (r.responsible_name) parts.push(`   責任者: ${r.responsible_name}`)
+                  if (r.executor_name) parts.push(`   実行者: ${r.executor_name}`)
+                  return parts.join('\n')
+                })
+                .join('\n\n')
             }
           }
         } catch { /* ignore */ }
@@ -653,6 +661,9 @@ ${siblingItemsStr || '（なし）'}
 アクションアイテム: ${selectedItem.title}
 説明: ${selectedItem.description || '（なし）'}
 期間: ${selectedItem.start_date} 〜 ${selectedItem.end_date}
+成果物: ${selectedItem.deliverable || '（未設定）'}
+責任者: ${(selectedItem as unknown as Record<string, string>).responsible_name || selectedItem.responsible_user_name || '（未設定）'}
+実行者: ${(selectedItem as unknown as Record<string, string>).executor_name || selectedItem.executor_user_name || '（未設定）'}
 現在のステータス: ${STATUS_BADGE[selectedItem.status]?.label || selectedItem.status}
 進捗: ${selectedItem.progress_percent}%
 
