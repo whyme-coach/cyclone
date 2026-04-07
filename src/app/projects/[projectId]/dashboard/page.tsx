@@ -148,7 +148,7 @@ export default function ProjectDashboardPage() {
         <Card>
           <CardTitle>KPIトレンド</CardTitle>
           <p className="text-xs text-slate-500 mt-1">横軸: 時間、縦軸: 実績値（青線）と目標値（赤点線）</p>
-          <div className="mt-4 space-y-6">
+          <div className="mt-4 grid gap-6 md:grid-cols-2">
             {kpis.map(kpi => {
               // Build chart data: records + monthly placeholders for fiscal year
               const fiscalYear = project.fiscal_year
@@ -178,7 +178,7 @@ export default function ProjectDashboardPage() {
               const targetRatio = latestValue !== null && kpi.target_value ? Math.round((latestValue / kpi.target_value) * 100) : null
 
               return (
-                <div key={kpi.id} className="border border-slate-100 rounded-lg p-4">
+                <div key={kpi.id} className="border border-slate-100 rounded-lg p-4 min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between mb-1">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{kpi.name}</p>
