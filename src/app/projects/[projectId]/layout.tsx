@@ -71,7 +71,13 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     if (projectRes.data) {
       const p = projectRes.data
       setProject(p)
-      setCompany(p.company as unknown as Company)
+      if (p.company) {
+        setCompany(p.company as unknown as Company)
+      } else if (p.company_id) {
+        // Fallback: fetch company directly (join may fail due to RLS)
+        const { data: companyData } = await supabase.from('companies').select('*').eq('id', p.company_id).single()
+        if (companyData) setCompany(companyData)
+      }
     }
     if (memberRes.data) setMember(memberRes.data)
     if (deptRes.data) setDepartments(deptRes.data)
