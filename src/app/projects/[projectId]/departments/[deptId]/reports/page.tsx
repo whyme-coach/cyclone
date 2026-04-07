@@ -965,37 +965,51 @@ ${siblingItemsStr || '（なし）'}
                 grouped.set(item.planTitle, list)
               }
               const groups = Array.from(grouped.entries())
-              const ROW_HEIGHT = 36
-              const LEFT_W = 400
+              const ROW_HEIGHT = 72
+              const GROUP_ROW_HEIGHT = 36
+              const LEFT_W = 520
               const totalRows = groups.reduce((acc, [, items]) => acc + items.length + 1, 0)
+
+              const formatDateShort = (d: string) => {
+                if (!d) return '-'
+                const dt = new Date(d)
+                return isNaN(dt.getTime()) ? '-' : `${dt.getMonth() + 1}/${dt.getDate()}`
+              }
 
               return (
                 <div style={{ display: 'flex', overflow: 'hidden', borderRadius: 8 }}>
                   {/* Left panel */}
                   <div style={{ width: LEFT_W, minWidth: LEFT_W, borderRight: '2px solid #e2e8f0', backgroundColor: '#fff', zIndex: 10 }}>
                     <div style={{ height: 52, borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'flex-end' }}>
-                      <span style={{ width: 220, padding: '8px 16px' }} className="text-xs font-semibold text-slate-500">タスク</span>
-                      <span style={{ width: 90, padding: '8px 4px' }} className="text-xs font-semibold text-slate-500">責任者</span>
-                      <span style={{ width: 90, padding: '8px 4px' }} className="text-xs font-semibold text-slate-500">実行者</span>
+                      <span style={{ flex: 1, padding: '8px 16px' }} className="text-xs font-semibold text-slate-500">タスク</span>
                     </div>
                     {groups.map(([kpiName, items]) => (
                       <div key={kpiName}>
-                        <div style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', padding: '0 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ height: GROUP_ROW_HEIGHT, display: 'flex', alignItems: 'center', padding: '0 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
                           <span className="text-xs font-bold text-slate-700 truncate">{kpiName}</span>
                         </div>
                         {items.map(item => {
                           const isSelected = selectedItem?.id === item.id
+                          const respName = (item as unknown as Record<string, string>).responsible_name || item.responsible_user_name || '-'
+                          const execName = (item as unknown as Record<string, string>).executor_name || item.executor_user_name || '-'
                           return (
                             <div key={item.id}
                               onClick={() => setSelectedItem(item)}
                               onDoubleClick={() => { selectActionItem(item); setWeeklySubStep('form') }}
-                              style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', borderBottom: '1px solid #f8fafc', cursor: 'pointer', backgroundColor: isSelected ? '#eff6ff' : 'transparent', borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent' }}
+                              style={{ height: ROW_HEIGHT, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '4px 16px 4px 24px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', backgroundColor: isSelected ? '#eff6ff' : 'transparent', borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent' }}
                               onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = '#f8fafc' }}
                               onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}
                             >
-                              <div style={{ width: 220, padding: '0 16px 0 24px', minWidth: 0 }}><p className="text-xs text-slate-700 truncate">{item.title}</p></div>
-                              <div style={{ width: 90, padding: '0 4px' }}><span className="text-xs text-slate-500 truncate block">{item.responsible_user_name || '-'}</span></div>
-                              <div style={{ width: 90, padding: '0 4px' }}><span className="text-xs text-slate-500 truncate block">{item.executor_user_name || '-'}</span></div>
+                              <p className="text-xs font-semibold text-slate-800 truncate">{item.title}</p>
+                              {item.description && <p className="text-[10px] text-slate-400 truncate mt-0.5">{item.description}</p>}
+                              <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-500">
+                                <span>{formatDateShort(item.start_date)} 〜 {formatDateShort(item.end_date)}</span>
+                                {item.deliverable && <span className="truncate">成果物: {item.deliverable}</span>}
+                              </div>
+                              <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                                <span>責任者: {respName}</span>
+                                <span>実行者: {execName}</span>
+                              </div>
                             </div>
                           )
                         })}
@@ -1023,19 +1037,22 @@ ${siblingItemsStr || '（なし）'}
                         </div>
                       </div>
                       {/* Timeline rows */}
+                      {(() => {
+                        const totalHeight = groups.reduce((acc, [, items]) => acc + GROUP_ROW_HEIGHT + items.length * ROW_HEIGHT, 0)
+                        return (
                       <div style={{ position: 'relative' }}>
                         {todayWeekIndex >= 0 && (
-                          <div style={{ position: 'absolute', left: todayWeekIndex * WEEK_WIDTH + WEEK_WIDTH / 2, top: 0, width: 2, backgroundColor: '#ef4444', zIndex: 5, height: totalRows * ROW_HEIGHT }} />
+                          <div style={{ position: 'absolute', left: todayWeekIndex * WEEK_WIDTH + WEEK_WIDTH / 2, top: 0, width: 2, backgroundColor: '#ef4444', zIndex: 5, height: totalHeight }} />
                         )}
                         {weeks.map((_, i) => (
-                          <div key={i} style={{ position: 'absolute', left: i * WEEK_WIDTH, top: 0, width: 1, backgroundColor: '#f1f5f9', height: totalRows * ROW_HEIGHT }} />
+                          <div key={i} style={{ position: 'absolute', left: i * WEEK_WIDTH, top: 0, width: 1, backgroundColor: '#f1f5f9', height: totalHeight }} />
                         ))}
                         {groups.map(([kpiName, items]) => (
                           <div key={kpiName}>
-                            <div style={{ height: ROW_HEIGHT, backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }} />
+                            <div style={{ height: GROUP_ROW_HEIGHT, backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }} />
                             {items.map(item => (
-                              <div key={item.id} style={{ height: ROW_HEIGHT, position: 'relative', borderBottom: '1px solid #f8fafc' }}>
-                                <div style={getBarStyle(item)}>
+                              <div key={item.id} style={{ height: ROW_HEIGHT, position: 'relative', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center' }}>
+                                <div style={{ ...getBarStyle(item), top: (ROW_HEIGHT - 20) / 2 }}>
                                   <span style={{ fontSize: 10, color: '#fff', paddingLeft: 6, lineHeight: '20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', pointerEvents: 'none' }}>{item.title}</span>
                                 </div>
                               </div>
@@ -1043,6 +1060,8 @@ ${siblingItemsStr || '（なし）'}
                           </div>
                         ))}
                       </div>
+                        )
+                      })()}
                     </div>
                   </div>
                 </div>
