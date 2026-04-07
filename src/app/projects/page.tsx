@@ -93,17 +93,19 @@ export default function ProjectsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-slate-900">プロジェクト一覧</h2>
-          <Button onClick={() => router.push('/projects/new')}>
-            + 新規プロジェクト
-          </Button>
+          {organization && (
+            <Button onClick={() => router.push('/projects/new')}>
+              + 新規プロジェクト
+            </Button>
+          )}
         </div>
 
         {projects.length === 0 ? (
           <Card>
             <EmptyState
               title="プロジェクトがありません"
-              description="新しいプロジェクトを作成して、事業計画の実行支援を始めましょう。"
-              action={<Button onClick={() => router.push('/projects/new')}>新規プロジェクトを作成</Button>}
+              description={organization ? "新しいプロジェクトを作成して、事業計画の実行支援を始めましょう。" : "プロジェクトへの招待をお待ちください。"}
+              action={organization ? <Button onClick={() => router.push('/projects/new')}>新規プロジェクトを作成</Button> : undefined}
             />
           </Card>
         ) : (
@@ -163,6 +165,7 @@ export default function ProjectsPage() {
                         {formatDateShort(project.updated_at)}
                       </td>
                       <td className="px-2 py-3">
+                        {organization && (
                         <button
                           onClick={async (e) => {
                             e.stopPropagation()
@@ -183,6 +186,7 @@ export default function ProjectsPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>
+                        )}
                       </td>
                     </tr>
                   )
