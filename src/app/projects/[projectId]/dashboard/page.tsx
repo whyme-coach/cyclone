@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProjectContext } from '../layout'
 import { Card, CardTitle } from '@/components/ui/Card'
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { createClient } from '@/lib/supabase/client'
-import { PROJECT_STATUS_LABELS, ACTION_ITEM_STATUS_LABELS, PROJECT_ROLE_LABELS } from '@/types/roles'
+import { PROJECT_STATUS_LABELS, PROJECT_ROLE_LABELS } from '@/types/roles'
 import { cn } from '@/lib/utils'
 import type { KPI, KPIRecord, ActionItem, Measure } from '@/types'
 
@@ -19,6 +19,8 @@ const XAxis = dynamic(() => import('recharts').then(m => m.XAxis), { ssr: false 
 const YAxis = dynamic(() => import('recharts').then(m => m.YAxis), { ssr: false })
 const Tooltip = dynamic(() => import('recharts').then(m => m.Tooltip), { ssr: false })
 const ResponsiveContainer = dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false })
+const ReferenceLine = dynamic(() => import('recharts').then(m => m.ReferenceLine), { ssr: false })
+const CartesianGrid = dynamic(() => import('recharts').then(m => m.CartesianGrid), { ssr: false })
 
 export default function ProjectDashboardPage() {
   const { project, company, role, departments, member } = useProjectContext()
@@ -27,7 +29,7 @@ export default function ProjectDashboardPage() {
   const [myMeasures, setMyMeasures] = useState<Measure[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     if (!project) return
@@ -49,7 +51,7 @@ export default function ProjectDashboardPage() {
           if (records) { for (const r of records) { if (!recordsByKpi[r.kpi_id]) recordsByKpi[r.kpi_id] = []; recordsByKpi[r.kpi_id].push(r) } }
           setKpis(kpiRes.data.map((k: KPI) => ({ ...k, records: recordsByKpi[k.id] || [] })))
         } else {
-          setKpis([])
+          setKpis(kpiRes.data.map((k: KPI) => ({ ...k, records: [] })))
         }
       }
 
@@ -59,7 +61,6 @@ export default function ProjectDashboardPage() {
         if (items) setActionItems(items)
       }
 
-      // For department_manager, load measures assigned to their department
       if (deptFilter) {
         const { data: measures } = await supabase.from('measures').select('*').eq('department_id', deptFilter)
         if (measures) setMyMeasures(measures)
@@ -73,13 +74,11 @@ export default function ProjectDashboardPage() {
   if (!project) return null
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
 
-  const statusCounts = actionItems.reduce((acc, item) => { acc[item.status] = (acc[item.status] || 0) + 1; return acc }, {} as Record<string, number>)
   const totalItems = actionItems.length
-  const completedItems = statusCounts['completed'] || 0
-  const delayedItems = statusCounts['delayed'] || 0
+  const completedItems = actionItems.filter(i => i.status === 'completed').length
+  const delayedItems = actionItems.filter(i => i.status === 'delayed').length
   const overallProgress = totalItems > 0 ? Math.round(actionItems.reduce((sum, i) => sum + i.progress_percent, 0) / totalItems) : 0
 
-  // Department manager gets a focused view
   const isDeptUser = role === 'department_manager'
   const myDept = departments.find(d => d.id === member?.department_id)
 
@@ -144,31 +143,88 @@ export default function ProjectDashboardPage() {
         </Card>
       )}
 
-      {/* KPI Charts */}
+      {/* KPI Trend Charts */}
       {kpis.length > 0 && (
         <Card>
           <CardTitle>KPIトレンド</CardTitle>
+          <p className="text-xs text-slate-500 mt-1">横軸: 時間、縦軸: 実績値（青線）と目標値（赤点線）</p>
           <div className="mt-4 grid gap-6 md:grid-cols-2">
-            {kpis.filter(k => k.records && k.records.length > 0).map(kpi => (
-              <div key={kpi.id} className="border border-slate-100 rounded-lg p-4">
-                <p className="text-sm font-medium text-slate-900 mb-1">{kpi.name}</p>
-                <p className="text-xs text-slate-500 mb-3">目標: {kpi.target_value} {kpi.target_unit}</p>
-                <div className="h-40">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={kpi.records?.map(r => ({ date: r.record_date.slice(5), value: Number(r.value) }))}>
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+            {kpis.map(kpi => {
+              // Build chart data: records + monthly placeholders for fiscal year
+              const fiscalYear = project.fiscal_year
+              const months: string[] = []
+              for (let i = 0; i < 12; i++) {
+                const m = ((3 + i) % 12) + 1
+                const y = i < 9 ? fiscalYear : fiscalYear + 1
+                months.push(`${y}-${String(m).padStart(2, '0')}`)
+              }
+
+              const recordMap = new Map<string, number>()
+              if (kpi.records) {
+                for (const r of kpi.records) {
+                  const monthKey = r.record_date.slice(0, 7) // YYYY-MM
+                  recordMap.set(monthKey, Number(r.value))
+                }
+              }
+
+              const chartData = months.map(m => ({
+                month: `${parseInt(m.split('-')[1])}月`,
+                実績: recordMap.get(m) ?? null,
+                目標: kpi.target_value ?? null,
+              }))
+
+              const hasData = kpi.records && kpi.records.length > 0
+              const latestValue = hasData ? Number(kpi.records![kpi.records!.length - 1].value) : null
+              const targetRatio = latestValue !== null && kpi.target_value ? Math.round((latestValue / kpi.target_value) * 100) : null
+
+              return (
+                <div key={kpi.id} className="border border-slate-100 rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-1">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{kpi.name}</p>
+                      <p className="text-xs text-slate-500">
+                        目標: {kpi.target_value} {kpi.target_unit}
+                        {kpi.previous_year_max != null && ` / 前年最大: ${kpi.previous_year_max} ${kpi.target_unit}`}
+                      </p>
+                    </div>
+                    {targetRatio !== null && (
+                      <Badge variant={targetRatio >= 100 ? 'success' : targetRatio >= 70 ? 'warning' : 'danger'}>
+                        {targetRatio}%
+                      </Badge>
+                    )}
+                  </div>
+                  {hasData && (
+                    <p className="text-xs text-slate-400 mb-2">
+                      最新実績: {latestValue} {kpi.target_unit}
+                    </p>
+                  )}
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        {/* Target line (red dashed) */}
+                        {kpi.target_value != null && (
+                          <ReferenceLine y={kpi.target_value} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '目標', fontSize: 10, fill: '#ef4444' }} />
+                        )}
+                        {/* Previous year max (gray dashed) */}
+                        {kpi.previous_year_max != null && (
+                          <ReferenceLine y={kpi.previous_year_max} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: '前年最大', fontSize: 10, fill: '#94a3b8' }} />
+                        )}
+                        {/* Actual values (blue line) */}
+                        <Line type="monotone" dataKey="実績" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4, fill: '#3b82f6' }} connectNulls={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {!hasData && (
+                    <p className="text-xs text-slate-400 text-center -mt-20">実績データが入力されるとグラフが表示されます</p>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
-          {kpis.filter(k => k.records && k.records.length > 0).length === 0 && (
-            <p className="text-sm text-slate-400 mt-2">KPIの実績データが入力されるとグラフが表示されます</p>
-          )}
         </Card>
       )}
 
@@ -184,27 +240,9 @@ export default function ProjectDashboardPage() {
                 className="text-left p-4 border border-slate-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all"
               >
                 <p className="text-sm font-medium text-slate-900">{dept.name}</p>
-                {dept.role_description && <p className="text-xs text-slate-400 mt-1 line-clamp-2">{dept.role_description}</p>}
+                {(dept as { role_description?: string }).role_description && <p className="text-xs text-slate-400 mt-1 line-clamp-2">{(dept as { role_description?: string }).role_description}</p>}
               </button>
             ))}
-          </div>
-        </Card>
-      )}
-
-      {/* Action Item Status */}
-      {totalItems > 0 && (
-        <Card>
-          <CardTitle>アクションアイテムステータス</CardTitle>
-          <div className="mt-4 flex gap-6 flex-wrap">
-            {Object.entries(ACTION_ITEM_STATUS_LABELS).map(([status, label]) => {
-              const count = statusCounts[status] || 0
-              return (
-                <div key={status} className="text-center">
-                  <p className="text-2xl font-bold text-slate-900">{count}</p>
-                  <p className="text-xs text-slate-500">{label}</p>
-                </div>
-              )
-            })}
           </div>
         </Card>
       )}
