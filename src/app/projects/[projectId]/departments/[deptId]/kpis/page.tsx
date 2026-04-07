@@ -17,7 +17,7 @@ import { createClient } from '@/lib/supabase/client'
 import { callAI, parseAIJsonResponse } from '@/lib/ai/helpers'
 import { GENERATE_KPI_TREE_SYSTEM_PROMPT, GENERATE_KPI_TREE_USER_PROMPT } from '@/lib/ai/prompts/generate-kpi-tree'
 import { cn } from '@/lib/utils'
-import type { KPI, Measure, ManagementGoal, Strategy, Company } from '@/types'
+import type { KPI, KPIRecord, Measure, ManagementGoal, Strategy, Company } from '@/types'
 
 type TreeKPI = { name: string; description: string; target_example: string; unit: string; calculation: string; frequency: string; measure_ids?: string[] }
 type TreeKSF = { ksf_title: string; ksf_measure_id: string | null; kpis: TreeKPI[] }
@@ -40,6 +40,9 @@ export default function KPIsPage() {
   const [selectedTreeKpi, setSelectedTreeKpi] = useState<{ kpi: TreeKPI; ksfMeasureId: string | null } | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [editingKpi, setEditingKpi] = useState<KPI | null>(null)
+  const [recordKpi, setRecordKpi] = useState<KPI | null>(null)
+  const [kpiRecords, setKpiRecords] = useState<KPIRecord[]>([])
+  const [recordLoading, setRecordLoading] = useState(false)
   const { toast } = useToast()
   const supabase = useMemo(() => createClient(), [])
   const department = departments.find(d => d.id === deptId)
@@ -186,6 +189,20 @@ export default function KPIsPage() {
     } catch {
       toast('登録に失敗しました', 'error')
     }
+  }
+
+  const handleOpenRecordModal = async (kpi: KPI) => {
+    setRecordKpi(kpi)
+    setRecordLoading(true)
+    try {
+      const { data } = await supabase
+        .from('kpi_records')
+        .select('*')
+        .eq('kpi_id', kpi.id)
+        .order('record_date', { ascending: false })
+      if (data) setKpiRecords(data)
+    } catch { /* ignore */ }
+    setRecordLoading(false)
   }
 
   const handleDeleteKpi = async (id: string) => {
@@ -417,10 +434,13 @@ export default function KPIsPage() {
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0 ml-2">
-                  <button onClick={() => { setEditingKpi(kpi); setShowModal(true) }} className="text-slate-400 hover:text-blue-600 p-1">
+                  <button onClick={() => handleOpenRecordModal(kpi)} className="text-slate-400 hover:text-green-600 p-1" title="実績入力">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                  </button>
+                  <button onClick={() => { setEditingKpi(kpi); setShowModal(true) }} className="text-slate-400 hover:text-blue-600 p-1" title="編集">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                   </button>
-                  <button onClick={() => handleDeleteKpi(kpi.id)} className="text-slate-400 hover:text-red-600 p-1">
+                  <button onClick={() => handleDeleteKpi(kpi.id)} className="text-slate-400 hover:text-red-600 p-1" title="削除">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 </div>
@@ -493,6 +513,33 @@ export default function KPIsPage() {
           <KpiForm kpi={editingKpi} measures={measures} onSave={handleSaveKpi} onClose={() => { setShowModal(false); setEditingKpi(null) }} />
         </Modal>
       )}
+
+      {/* KPI Record Input Modal */}
+      {recordKpi && (
+        <KpiRecordModal
+          kpi={recordKpi}
+          records={kpiRecords}
+          loading={recordLoading}
+          fiscalYear={project?.fiscal_year || new Date().getFullYear()}
+          onSave={async (recordDate: string, value: number) => {
+            try {
+              const res = await fetch('/api/save-kpi-record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kpiId: recordKpi.id, recordDate, value }),
+              })
+              if (!res.ok) throw new Error()
+              toast('実績を保存しました', 'success')
+              // Refresh records
+              const { data } = await supabase.from('kpi_records').select('*').eq('kpi_id', recordKpi.id).order('record_date', { ascending: false })
+              if (data) setKpiRecords(data)
+            } catch {
+              toast('保存に失敗しました', 'error')
+            }
+          }}
+          onClose={() => { setRecordKpi(null); setKpiRecords([]) }}
+        />
+      )}
     </div>
   )
 }
@@ -522,5 +569,170 @@ function KpiForm({ kpi, measures, onSave, onClose }: { kpi: KPI | null; measures
         <Button onClick={() => onSave({ ...form, frequency: form.frequency as 'weekly' | 'monthly' | 'quarterly', target_value: form.target_value ? parseFloat(form.target_value) : undefined, previous_year_max: form.previous_year_max ? parseFloat(form.previous_year_max) : undefined, measure_id: form.measure_id || undefined })} disabled={!form.name}>保存</Button>
       </div>
     </div>
+  )
+}
+
+function KpiRecordModal({ kpi, records, loading, fiscalYear, onSave, onClose }: {
+  kpi: KPI
+  records: KPIRecord[]
+  loading: boolean
+  fiscalYear: number
+  onSave: (recordDate: string, value: number) => Promise<void>
+  onClose: () => void
+}) {
+  const [selectedPeriod, setSelectedPeriod] = useState('')
+  const [inputValue, setInputValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // Generate period options based on frequency
+  const periodOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = []
+    if (kpi.frequency === 'weekly') {
+      // Generate weeks: April of fiscalYear to March of fiscalYear+1
+      const d = new Date(fiscalYear, 3, 1)
+      const day = d.getDay()
+      const diff = day === 0 ? 1 : day === 1 ? 0 : 8 - day
+      d.setDate(d.getDate() + diff)
+      const fyEnd = new Date(fiscalYear + 1, 2, 31)
+      while (d <= fyEnd) {
+        const m = d.getMonth() + 1
+        const week = Math.ceil(d.getDate() / 7)
+        options.push({
+          value: d.toISOString().split('T')[0],
+          label: `${m}月${week}週（${m}/${d.getDate()}〜）`,
+        })
+        d.setDate(d.getDate() + 7)
+      }
+    } else if (kpi.frequency === 'monthly') {
+      // 12 months: April to March
+      for (let i = 0; i < 12; i++) {
+        const m = ((3 + i) % 12) + 1 // April=4, ..., March=3
+        const y = i < 9 ? fiscalYear : fiscalYear + 1
+        options.push({
+          value: `${y}-${String(m).padStart(2, '0')}-01`,
+          label: `${y}年${m}月`,
+        })
+      }
+    } else {
+      // Quarterly
+      const quarters = [
+        { label: `Q1（${fiscalYear}年4-6月）`, value: `${fiscalYear}-04-01` },
+        { label: `Q2（${fiscalYear}年7-9月）`, value: `${fiscalYear}-07-01` },
+        { label: `Q3（${fiscalYear}年10-12月）`, value: `${fiscalYear}-10-01` },
+        { label: `Q4（${fiscalYear + 1}年1-3月）`, value: `${fiscalYear + 1}-01-01` },
+      ]
+      options.push(...quarters)
+    }
+    return options
+  }, [kpi.frequency, fiscalYear])
+
+  // Auto-select current period
+  useEffect(() => {
+    if (periodOptions.length > 0 && !selectedPeriod) {
+      const now = new Date()
+      const todayStr = now.toISOString().split('T')[0]
+      // Find the closest period that hasn't passed
+      const current = periodOptions.find(p => p.value >= todayStr) || periodOptions[periodOptions.length - 1]
+      setSelectedPeriod(current.value)
+    }
+  }, [periodOptions, selectedPeriod])
+
+  // Check if selected period already has a record
+  const existingRecord = records.find(r => r.record_date === selectedPeriod)
+  useEffect(() => {
+    if (existingRecord) {
+      setInputValue(String(existingRecord.value))
+    } else {
+      setInputValue('')
+    }
+  }, [existingRecord, selectedPeriod])
+
+  const handleSave = async () => {
+    if (!selectedPeriod || inputValue === '') return
+    setSaving(true)
+    await onSave(selectedPeriod, parseFloat(inputValue))
+    setSaving(false)
+  }
+
+  const freqLabel = kpi.frequency === 'weekly' ? '週次' : kpi.frequency === 'monthly' ? '月次' : '四半期'
+
+  return (
+    <Modal open title="KPI実績入力" onClose={onClose} size="md">
+      <div className="space-y-4">
+        {/* KPI info */}
+        <div className="bg-slate-50 rounded-lg p-3">
+          <p className="text-sm font-semibold text-slate-900">{kpi.name}</p>
+          <div className="flex gap-3 mt-1 text-xs text-slate-500">
+            <span>目標: {kpi.target_value} {kpi.target_unit}</span>
+            {kpi.previous_year_max != null && <span>前年最大: {kpi.previous_year_max} {kpi.target_unit}</span>}
+            <span>頻度: {freqLabel}</span>
+          </div>
+        </div>
+
+        {/* Input form */}
+        <div className="grid grid-cols-2 gap-4">
+          <Select
+            label="対象期間"
+            value={selectedPeriod}
+            onChange={e => setSelectedPeriod(e.target.value)}
+            options={periodOptions}
+          />
+          <Input
+            label={`実績値${kpi.target_unit ? ` (${kpi.target_unit})` : ''}`}
+            type="number"
+            value={inputValue}
+            onChange={e => setInputValue(e.target.value)}
+            placeholder={existingRecord ? '上書き更新' : '入力'}
+          />
+        </div>
+        <div className="flex justify-end">
+          <Button onClick={handleSave} loading={saving} disabled={!selectedPeriod || inputValue === ''}>
+            {existingRecord ? '更新' : '保存'}
+          </Button>
+        </div>
+
+        {/* Past records */}
+        <div className="border-t border-slate-200 pt-4">
+          <p className="text-sm font-semibold text-slate-700 mb-2">過去の実績</p>
+          {loading ? (
+            <div className="flex justify-center py-4"><Spinner size="sm" /></div>
+          ) : records.length === 0 ? (
+            <p className="text-sm text-slate-400">実績データはまだありません</p>
+          ) : (
+            <div className="overflow-y-auto max-h-48">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-1.5 px-2 text-slate-500 font-semibold">期間</th>
+                    <th className="text-right py-1.5 px-2 text-slate-500 font-semibold">実績値</th>
+                    <th className="text-right py-1.5 px-2 text-slate-500 font-semibold">目標比</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map(r => {
+                    const periodLabel = periodOptions.find(p => p.value === r.record_date)?.label || r.record_date
+                    const targetRatio = kpi.target_value ? `${Math.round((r.value / kpi.target_value) * 100)}%` : '-'
+                    return (
+                      <tr key={r.id} className="border-b border-slate-100">
+                        <td className="py-1.5 px-2 text-slate-700">{periodLabel}</td>
+                        <td className="py-1.5 px-2 text-right font-medium text-slate-900">{r.value} {kpi.target_unit}</td>
+                        <td className="py-1.5 px-2 text-right">
+                          <span className={cn(
+                            'text-xs font-medium',
+                            kpi.target_value && r.value >= kpi.target_value ? 'text-green-600' : 'text-amber-600'
+                          )}>
+                            {targetRatio}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
   )
 }
