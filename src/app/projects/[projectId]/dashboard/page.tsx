@@ -148,7 +148,7 @@ export default function ProjectDashboardPage() {
         <Card>
           <CardTitle>KPIトレンド</CardTitle>
           <p className="text-xs text-slate-500 mt-1">横軸: 時間、縦軸: 実績値（青線）と目標値（赤点線）</p>
-          <div className="mt-4 grid gap-6 md:grid-cols-2">
+          <div className="mt-4 space-y-6">
             {kpis.map(kpi => {
               // Build chart data: records + monthly placeholders for fiscal year
               const fiscalYear = project.fiscal_year
@@ -198,7 +198,7 @@ export default function ProjectDashboardPage() {
                       最新実績: {latestValue} {kpi.target_unit}
                     </p>
                   )}
-                  <div className="h-48">
+                  <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
