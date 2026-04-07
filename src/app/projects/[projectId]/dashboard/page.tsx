@@ -178,7 +178,7 @@ export default function ProjectDashboardPage() {
               const targetRatio = latestValue !== null && kpi.target_value ? Math.round((latestValue / kpi.target_value) * 100) : null
 
               return (
-                <div key={kpi.id} className="border border-slate-100 rounded-lg p-4 min-w-0 overflow-hidden">
+                <div key={kpi.id} className="border border-slate-100 rounded-lg p-4 min-w-0">
                   <div className="flex items-start justify-between mb-1">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{kpi.name}</p>
@@ -198,12 +198,12 @@ export default function ProjectDashboardPage() {
                       最新実績: {latestValue} {kpi.target_unit}
                     </p>
                   )}
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                  <div style={{ width: '100%', height: 280 }}>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey="month" tick={{ fontSize: 9 }} interval={0} />
-                        <YAxis tick={{ fontSize: 10 }} />
+                        <XAxis dataKey="month" tick={{ fontSize: 9 }} interval={0} tickMargin={5} />
+                        <YAxis tick={{ fontSize: 10 }} width={35} />
                         <Tooltip />
                         {/* Target line (red dashed) */}
                         {kpi.target_value != null && (
@@ -219,7 +219,7 @@ export default function ProjectDashboardPage() {
                     </ResponsiveContainer>
                   </div>
                   {!hasData && (
-                    <p className="text-xs text-slate-400 text-center -mt-20">実績データが入力されるとグラフが表示されます</p>
+                    <p className="text-xs text-slate-400 text-center" style={{ marginTop: -160 }}>実績データが入力されるとグラフが表示されます</p>
                   )}
                 </div>
               )
