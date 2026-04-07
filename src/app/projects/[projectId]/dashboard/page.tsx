@@ -178,7 +178,7 @@ export default function ProjectDashboardPage() {
               const targetRatio = latestValue !== null && kpi.target_value ? Math.round((latestValue / kpi.target_value) * 100) : null
 
               return (
-                <div key={kpi.id} className="border border-slate-100 rounded-lg p-4 min-w-0">
+                <div key={kpi.id} className="border border-slate-100 rounded-lg p-4 min-w-0" style={{ minHeight: 360 }}>
                   <div className="flex items-start justify-between mb-1">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{kpi.name}</p>
