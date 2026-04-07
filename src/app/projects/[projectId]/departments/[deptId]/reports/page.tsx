@@ -496,21 +496,9 @@ export default function ReportsPage() {
           .single()
         if (kpi) {
           setLinkedKpi(kpi)
-          // Auto-select current period
+          // Default to today's date
           const now = new Date()
-          if (kpi.frequency === 'monthly') {
-            setKpiRecordPeriod(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`)
-          } else if (kpi.frequency === 'quarterly') {
-            const q = Math.floor(now.getMonth() / 3) * 3 + 1
-            setKpiRecordPeriod(`${now.getFullYear()}-${String(q).padStart(2, '0')}-01`)
-          } else {
-            // Weekly: current Monday
-            const d = new Date(now)
-            const day = d.getDay()
-            const diff = day === 0 ? -6 : 1 - day
-            d.setDate(d.getDate() + diff)
-            setKpiRecordPeriod(d.toISOString().split('T')[0])
-          }
+          setKpiRecordPeriod(now.toISOString().split('T')[0])
           // Fetch latest record
           const { data: latestRec } = await supabase
             .from('kpi_records')
