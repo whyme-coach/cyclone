@@ -73,10 +73,17 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       setProject(p)
       if (p.company) {
         setCompany(p.company as unknown as Company)
-      } else if (p.company_id) {
-        // Fallback: fetch company directly (join may fail due to RLS)
-        const { data: companyData } = await supabase.from('companies').select('*').eq('id', p.company_id).single()
-        if (companyData) setCompany(companyData)
+      } else {
+        // Fallback: use admin API to fetch company (RLS may block client-side join)
+        try {
+          const res = await fetch(`/api/project-info?projectId=${projectId}`)
+          if (res.ok) {
+            const info = await res.json()
+            if (info.companyName) {
+              setCompany({ name: info.companyName } as Company)
+            }
+          }
+        } catch { /* ignore */ }
       }
     }
     if (memberRes.data) setMember(memberRes.data)
