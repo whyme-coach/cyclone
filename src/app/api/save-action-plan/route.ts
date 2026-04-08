@@ -20,6 +20,10 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
+  // Verify project membership
+  const { data: membership } = await admin.from('project_members').select('id').eq('project_id', projectId).eq('user_id', user.id).single()
+  if (!membership) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
   try {
     let planId = existingPlanId
 

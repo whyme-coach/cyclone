@@ -17,6 +17,12 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
+  // Verify membership via post → project_id
+  const { data: post } = await admin.from('timeline_posts').select('project_id').eq('id', postId).single()
+  if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+  const { data: membership } = await admin.from('project_members').select('id').eq('project_id', post.project_id).eq('user_id', user.id).single()
+  if (!membership) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
   try {
     const { data, error } = await admin.from('timeline_comments').insert({
       post_id: postId,

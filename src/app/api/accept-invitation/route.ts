@@ -38,17 +38,8 @@ export async function POST(req: Request) {
     .single()
 
   if (!invitation) {
-    // No invitation found - check user metadata for invited role
-    const invitedRole = user.user_metadata?.invited_role || 'department_manager'
-
-    // Add as member anyway (they were invited via Supabase Auth)
-    await admin.from('project_members').insert({
-      project_id: projectId,
-      user_id: user.id,
-      role: invitedRole,
-    })
-
-    return NextResponse.json({ success: true, message: 'joined_via_metadata' })
+    // No invitation found - reject to prevent role escalation via user_metadata
+    return NextResponse.json({ error: 'No valid invitation found' }, { status: 403 })
   }
 
   // Add as project member

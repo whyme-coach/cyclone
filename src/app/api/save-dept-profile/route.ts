@@ -21,6 +21,9 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
+  const { data: membership } = await admin.from('project_members').select('id').eq('project_id', projectId).eq('user_id', user.id).single()
+  if (!membership) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
   try {
     const { error } = await admin.from('department_profiles').upsert({
       project_id: projectId,

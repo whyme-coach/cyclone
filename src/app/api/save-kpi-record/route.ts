@@ -17,6 +17,12 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
+  // Verify membership: KPI → project_id → project_members
+  const { data: kpi } = await admin.from('kpis').select('project_id').eq('id', kpiId).single()
+  if (!kpi) return NextResponse.json({ error: 'KPI not found' }, { status: 404 })
+  const { data: membership } = await admin.from('project_members').select('id').eq('project_id', kpi.project_id).eq('user_id', user.id).single()
+  if (!membership) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
   try {
     // Upsert: UNIQUE(kpi_id, record_date) allows overwriting same period
     const { error } = await admin.from('kpi_records').upsert({
