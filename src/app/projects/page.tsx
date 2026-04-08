@@ -77,21 +77,8 @@ export default function ProjectsPage() {
   })
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-slate-900">Cyclone</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-600">{profile?.full_name || user?.email}</span>
-            <Button variant="ghost" size="sm" onClick={() => signOut().then(() => router.push('/'))}>
-              ログアウト
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+        <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-slate-900">プロジェクト一覧</h2>
           {organization && (
             <Button onClick={() => router.push('/projects/new')}>
@@ -195,7 +182,6 @@ export default function ProjectsPage() {
             </table>
           </div>
         )}
-      </main>
     </div>
   )
 }
