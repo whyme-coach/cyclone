@@ -54,8 +54,15 @@ export default function OrganizationSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: organization.id, email: inviteEmail.trim(), role: 'consultant' }),
       })
-      if (!res.ok) throw new Error()
-      toast('招待を送信しました', 'success')
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      if (data.method === 'direct') {
+        toast('既存ユーザーをメンバーに追加しました', 'success')
+      } else if (data.method === 'magiclink') {
+        toast('マジックリンクを送信しました', 'success')
+      } else {
+        toast('招待メールを送信しました', 'success')
+      }
       setInviteEmail('')
       // Refresh members
       const { data: orgMembers } = await supabase.from('organization_members').select('*').eq('organization_id', organization.id)
