@@ -25,10 +25,13 @@ export async function POST(req: Request) {
 
   try {
     // Upsert: UNIQUE(kpi_id, record_date) allows overwriting same period
+    const numValue = parseFloat(value)
+    if (isNaN(numValue)) return NextResponse.json({ error: 'Invalid value' }, { status: 400 })
+
     const { error } = await admin.from('kpi_records').upsert({
       kpi_id: kpiId,
       record_date: recordDate,
-      value: parseFloat(value),
+      value: numValue,
       recorded_by: user.id,
     }, { onConflict: 'kpi_id,record_date' })
 

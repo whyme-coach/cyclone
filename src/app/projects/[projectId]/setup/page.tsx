@@ -973,16 +973,16 @@ function StrategyLinkStep({ projectId, onNext, onBack, supabase, toast }: {
 
   const handleSaveLinks = async () => {
     setSaving(true)
-    console.log('[Step4] Saving links:', links.length, 'measureDepts:', Object.keys(measureDepts).length)
+    // Save links
     try {
       const res = await fetch('/api/save-strategy-links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, links, measureDepts }),
       })
-      console.log('[Step4] Response status:', res.status)
+      // Response received
       const data = await res.json()
-      console.log('[Step4] Response data:', data)
+      // Data parsed
       if (!res.ok) throw new Error(data.error || 'Save failed')
       setSaved(true)
       toast('戦略-施策紐付けを保存しました', 'success')
@@ -1150,16 +1150,16 @@ function InviteMembersStep({ projectId, onBack }: { projectId: string; onBack: (
     if (!file) return
     // Reset input so same file can be re-selected
     e.target.value = ''
-    console.log('[Step5] Excel file selected:', file.name, file.size, 'bytes')
+    // Excel file selected
     try {
       const XLSX = await import('xlsx')
-      console.log('[Step5] XLSX loaded, version:', XLSX.version)
+      // XLSX loaded
       const data = await file.arrayBuffer()
       const wb = XLSX.read(data)
-      console.log('[Step5] Sheets:', wb.SheetNames)
+      // Sheets loaded
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws)
-      console.log('[Step5] Parsed rows:', rows.length, 'First row keys:', rows[0] ? Object.keys(rows[0]) : 'empty')
+      // Rows parsed
 
       // Flexible column matching by partial keyword search
       const findCol = (row: Record<string, string>, keywords: string[]): string => {

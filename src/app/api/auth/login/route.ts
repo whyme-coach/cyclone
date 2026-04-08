@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(req: Request) {
-  const { email, password } = await req.json()
+  let body
+  try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid request' }, { status: 400 }) }
+  const { email, password } = body
 
   if (!email || !password) {
     return NextResponse.json({ error: 'メールアドレスとパスワードを入力してください' }, { status: 400 })

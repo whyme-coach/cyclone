@@ -9,7 +9,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { projectId } = await req.json()
+  let body
+  try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid request' }, { status: 400 }) }
+  const { projectId } = body
   if (!projectId) {
     return NextResponse.json({ error: 'Missing projectId' }, { status: 400 })
   }
