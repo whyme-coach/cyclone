@@ -61,8 +61,8 @@ interface GanttTask {
 
 export default function ActionPlansPage() {
   const params = useParams()
-  const projectId = params.projectId as string
-  const deptId = params.deptId as string
+  const projectId = String(params.projectId || '')
+  const deptId = String(params.deptId || '')
   const { project, company, departments, member } = useProjectContext()
   const { toast } = useToast()
   const supabase = useMemo(() => createClient(), [])
@@ -517,8 +517,8 @@ export default function ActionPlansPage() {
             deliverable: item.deliverable,
             action_plan_id: item.action_plan_id,
             kpi_name: kpi?.name || plan.title,
-            responsible_user_name: ((item as unknown as Record<string, string>).responsible_name) || (item.responsible_user_id ? userNameMap[item.responsible_user_id] : undefined),
-            executor_user_name: ((item as unknown as Record<string, string>).executor_name) || (item.executor_user_id ? userNameMap[item.executor_user_id] : undefined),
+            responsible_user_name: item.responsible_name || (item.responsible_user_id ? userNameMap[item.responsible_user_id] : undefined),
+            executor_user_name: item.executor_name || (item.executor_user_id ? userNameMap[item.executor_user_id] : undefined),
           })
         }
       }

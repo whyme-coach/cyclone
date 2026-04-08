@@ -26,7 +26,7 @@ type KPITree = TreeKGI[]
 
 export default function KPIsPage() {
   const params = useParams()
-  const deptId = params.deptId as string
+  const deptId = String(params.deptId || '')
   const { project, company, departments } = useProjectContext()
   const [kpis, setKpis] = useState<KPI[]>([])
   const [measures, setMeasures] = useState<Measure[]>([])

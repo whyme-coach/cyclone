@@ -51,7 +51,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const router = useRouter()
   const { user } = useAuth()
   const supabase = createClient()
-  const projectId = params.projectId as string
+  const projectId = String(params.projectId || '')
 
   const [project, setProject] = useState<Project | null>(null)
   const [company, setCompany] = useState<Company | null>(null)
@@ -228,7 +228,7 @@ function SidebarUserSection() {
   const { user, profile, signOut } = useAuth()
   const router = useRouter()
   const params = useParams()
-  const projectId = params.projectId as string
+  const projectId = String(params.projectId || '')
   const [menuOpen, setMenuOpen] = useState(false)
 
   if (!user) return null

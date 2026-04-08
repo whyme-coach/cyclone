@@ -80,8 +80,8 @@ interface AIExtraction {
 
 export default function DepartmentProfilePage() {
   const params = useParams()
-  const projectId = params.projectId as string
-  const deptId = params.deptId as string
+  const projectId = String(params.projectId || '')
+  const deptId = String(params.deptId || '')
 
   const { project, company, departments } = useProjectContext()
   const supabase = useMemo(() => createClient(), [])

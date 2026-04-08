@@ -264,6 +264,8 @@ export interface ActionItem {
   description?: string
   responsible_user_id?: string
   executor_user_id?: string
+  responsible_name?: string
+  executor_name?: string
   start_date: string
   end_date: string
   deliverable?: string

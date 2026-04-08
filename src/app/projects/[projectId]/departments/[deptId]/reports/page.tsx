@@ -159,8 +159,8 @@ function getMonthOptions(fiscalYear: number): { value: string; label: string }[]
 
 export default function ReportsPage() {
   const params = useParams()
-  const projectId = params.projectId as string
-  const deptId = params.deptId as string
+  const projectId = String(params.projectId || '')
+  const deptId = String(params.deptId || '')
   const { project, company, departments, member } = useProjectContext()
   const { toast } = useToast()
   const supabase = useMemo(() => createClient(), [])
@@ -738,8 +738,8 @@ ${pastReportsStr ? `【このアクションアイテムの過去の週次報告
 説明: ${selectedItem.description || '（なし）'}
 期間: ${selectedItem.start_date} 〜 ${selectedItem.end_date}
 成果物: ${selectedItem.deliverable || '（未設定）'}
-責任者: ${(selectedItem as unknown as Record<string, string>).responsible_name || selectedItem.responsible_user_name || '（未設定）'}
-実行者: ${(selectedItem as unknown as Record<string, string>).executor_name || selectedItem.executor_user_name || '（未設定）'}
+責任者: ${selectedItem.responsible_name || selectedItem.responsible_user_name || '（未設定）'}
+実行者: ${selectedItem.executor_name || selectedItem.executor_user_name || '（未設定）'}
 現在のステータス: ${STATUS_BADGE[selectedItem.status]?.label || selectedItem.status}
 進捗: ${selectedItem.progress_percent}%
 
@@ -1073,8 +1073,8 @@ ${pastReportsStr ? `【このアクションアイテムの過去の週次報告
                         </div>
                         {items.map(item => {
                           const isSelected = selectedItem?.id === item.id
-                          const respName = (item as unknown as Record<string, string>).responsible_name || item.responsible_user_name || '-'
-                          const execName = (item as unknown as Record<string, string>).executor_name || item.executor_user_name || '-'
+                          const respName = item.responsible_name || item.responsible_user_name || '-'
+                          const execName = item.executor_name || item.executor_user_name || '-'
                           return (
                             <div key={item.id}
                               onClick={() => setSelectedItem(item)}
@@ -1193,11 +1193,11 @@ ${pastReportsStr ? `【このアクションアイテムの過去の週次報告
               <div className="flex gap-6">
                 <div>
                   <p className="text-xs text-slate-400">責任者</p>
-                  <p className="text-sm text-slate-800">{(selectedItem as unknown as Record<string, string>).responsible_name || selectedItem.responsible_user_name || '-'}</p>
+                  <p className="text-sm text-slate-800">{selectedItem.responsible_name || selectedItem.responsible_user_name || '-'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-400">実行者</p>
-                  <p className="text-sm text-slate-800">{(selectedItem as unknown as Record<string, string>).executor_name || selectedItem.executor_user_name || '-'}</p>
+                  <p className="text-sm text-slate-800">{selectedItem.executor_name || selectedItem.executor_user_name || '-'}</p>
                 </div>
               </div>
             </div>
