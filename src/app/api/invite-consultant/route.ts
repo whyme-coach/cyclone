@@ -37,7 +37,21 @@ export async function POST(req: Request) {
         console.error('Add org member error:', insertErr)
         return NextResponse.json({ error: 'Failed to add member' }, { status: 500 })
       }
-      return NextResponse.json({ success: true, method: 'direct' })
+
+      // Auto-add to all projects belonging to this organization
+      const { data: orgProjects } = await admin.from('projects').select('id').eq('organization_id', organizationId)
+      if (orgProjects) {
+        for (const proj of orgProjects) {
+          await admin.from('project_members').upsert({
+            project_id: proj.id,
+            user_id: existingProfile.id,
+            role: 'consultant',
+            invited_by: user.id,
+          }, { onConflict: 'project_id,user_id' })
+        }
+      }
+
+      return NextResponse.json({ success: true, method: 'direct', projectCount: orgProjects?.length || 0 })
     }
 
     // New user - send invitation

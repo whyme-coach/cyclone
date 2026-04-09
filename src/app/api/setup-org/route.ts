@@ -26,7 +26,49 @@ export async function POST(req: Request) {
       .select('*')
       .eq('id', existingMember.organization_id)
       .single()
+
+    // Ensure this user is added to all org projects as consultant
+    if (org) {
+      const { data: orgProjects } = await admin.from('projects').select('id').eq('organization_id', org.id)
+      if (orgProjects) {
+        for (const proj of orgProjects) {
+          await admin.from('project_members').upsert({
+            project_id: proj.id,
+            user_id: user.id,
+            role: 'consultant',
+          }, { onConflict: 'project_id,user_id' })
+        }
+      }
+    }
+
     return NextResponse.json({ organization: org, existing: true })
+  }
+
+  // Check if user was invited to an org via user_metadata
+  const invitedOrgId = user.user_metadata?.org_id
+  if (invitedOrgId) {
+    const invitedOrgRole = user.user_metadata?.org_role || 'consultant'
+    // Add to the organization
+    await admin.from('organization_members').upsert({
+      organization_id: invitedOrgId,
+      user_id: user.id,
+      role: invitedOrgRole,
+    }, { onConflict: 'organization_id,user_id' })
+
+    // Auto-add to all org projects
+    const { data: orgProjects } = await admin.from('projects').select('id').eq('organization_id', invitedOrgId)
+    if (orgProjects) {
+      for (const proj of orgProjects) {
+        await admin.from('project_members').upsert({
+          project_id: proj.id,
+          user_id: user.id,
+          role: 'consultant',
+        }, { onConflict: 'project_id,user_id' })
+      }
+    }
+
+    const { data: org } = await admin.from('organizations').select('*').eq('id', invitedOrgId).single()
+    return NextResponse.json({ organization: org, existing: false, joined: true })
   }
 
   // Parse request body for org name

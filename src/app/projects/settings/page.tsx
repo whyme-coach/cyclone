@@ -57,11 +57,11 @@ export default function OrganizationSettingsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
       if (data.method === 'direct') {
-        toast('既存ユーザーをメンバーに追加しました', 'success')
+        toast(`メンバーに追加し、${data.projectCount || 0}件のプロジェクトに参加させました`, 'success')
       } else if (data.method === 'magiclink') {
-        toast('マジックリンクを送信しました', 'success')
+        toast('マジックリンクを送信しました（ログイン後にプロジェクトに自動参加します）', 'success')
       } else {
-        toast('招待メールを送信しました', 'success')
+        toast('招待メールを送信しました（登録後にプロジェクトに自動参加します）', 'success')
       }
       setInviteEmail('')
       // Refresh members
